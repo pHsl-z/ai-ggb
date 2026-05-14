@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI GGB</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <div id="geogebra-container"></div>
+
+        <div id="chat-panel" class="panel" style="top:20px;right:20px;width:380px;height:520px;">
+            <div class="panel-header" id="panel-header">
+                <div class="traffic-lights">
+                    <div class="light red" id="btn-close"></div>
+                    <div class="light yellow" id="btn-minimize"></div>
+                    <div class="light green" id="btn-refresh"></div>
+                </div>
+                <span class="panel-title">AI GGB</span>
+                <span class="conn-dot" id="conn-dot" title="未连接"></span>
+                <span class="ggb-status" id="ggb-status" title="GeoGebra 状态">⏳</span>
+                <div class="panel-actions">
+                    <button class="icon-btn" id="btn-history" title="历史">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </button>
+                    <button class="icon-btn" id="btn-config" title="设置">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="panel-body" id="panel-body">
+                <div id="view-chat" class="view active">
+                    <div id="messages-list"></div>
+                    <form id="chat-form" autocomplete="off">
+                        <div class="input-row">
+                            <input type="text" id="chat-input" placeholder="输入问题…">
+                            <button type="submit" id="send-btn">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="view-history" class="view">
+                    <div class="view-header">
+                        <span class="view-title">历史记录</span>
+                        <button class="icon-btn sm" id="btn-new-conv" title="新建对话">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        </button>
+                    </div>
+                    <div id="history-list"></div>
+                </div>
+            </div>
+
+            <div class="resize-handle" id="resize-handle"></div>
+        </div>
+
+        <div id="minimized-btn" class="minimized-btn hidden" title="AI GGB">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+    </div>
+
+    <div id="config-modal" class="modal">
+        <div class="modal-overlay" id="config-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">设置</span>
+                <button class="icon-btn" id="btn-close-config">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>模型提供商</label>
+                    <select id="provider-select"></select>
+                </div>
+                <div class="form-group">
+                    <label>模型</label>
+                    <select id="model-select"></select>
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="api-key" placeholder="输入 API Key">
+                </div>
+                <div class="form-group">
+                    <label>API 地址</label>
+                    <input type="text" id="base-url" placeholder="留空使用默认">
+                </div>
+                <div class="form-group">
+                    <label>温度</label>
+                    <input type="number" id="temperature" value="0.7" step="0.1" min="0" max="2">
+                </div>
+                <div class="form-group">
+                    <label>系统提示词</label>
+                    <textarea id="system-prompt" rows="3" placeholder="自定义系统提示词"></textarea>
+                </div>
+                <div class="divider"></div>
+                <div class="form-group">
+                    <label class="checkbox-label"><input type="checkbox" id="use-proxy"> 启用 CORS 代理</label>
+                </div>
+                <div class="form-group">
+                    <label>代理地址</label>
+                    <input type="text" id="proxy-url" placeholder="https://your-proxy.workers.dev">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="btn-save-config">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
