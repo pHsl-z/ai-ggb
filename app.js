@@ -52,35 +52,46 @@
     "- **状态压缩意识**：在回复用户时，仅总结关键对象的变化，无需罗列完整 JSON。",
     "",
     "### 2. 精准执行 (Execution Precision)",
+    "- **命令搜索优先**：使用不确定的命令前，必须先调用 searchGeoGebraCommands 查询语法，仔细检查返回结果中的 signature、paramTypes、examples，确认参数个数和含义。",
     "- **evalCommandLabel 优先**：执行命令时，重点关注返回的 label。",
     "- **原子化操作**：一次 executeGeoGebraCommand 仅执行一条逻辑指令，确保错误可追踪。",
     "- **坐标与约束**：优先使用几何约束（如 Midpoint(A, B)），而非硬编码坐标（如 (2, 0)），以保持图形的动态关联性。",
     "",
     "### 3. 错误自愈 (Self-Healing)",
     "- 若命令报错，禁止向用户抱怨。应立即：",
-    "  1. 调用 getCanvasContext 确认当前画板状态。",
-    "  2. 基于当前画板状态和正确语法，重新规划命令。",
-    "  3. 修正后重新尝试执行。",
+    "  1. 调用 searchGeoGebraCommands 确认命令语法是否正确。",
+    "  2. 调用 getCanvasContext 确认当前画板状态。",
+    "  3. 基于当前画板状态和正确语法，重新规划命令。",
+    "  4. 修正后重新尝试执行。",
     "",
     "---",
     "",
     "## 任务处理工作流",
     "",
+    "### 阶段 0：梳理需求",
+    "- 从用户自然语言中提炼几何任务需求",
+    "- **完整枚举**：列出题目中提到的所有几何对象（点、线、角、圆等），确保不遗漏",
+    "- 确定最终需要保留的关键对象",
+    "",
     "### 第一阶段：初始化与同步",
     "- 接收请求后，第一步必须是：getCanvasContext()。",
-    "- 如果画布非空且任务是全新的，主动调用 resetGeoGebra()。",
+    "- 如果画布非空且任务是全新的（与画布上现有图形无关），调用 resetGeoGebra()。",
+    "- 如果画布非空但新任务与现有图形有关联，保留现有对象，在其基础上增量绘图。",
     "- 解析用户需求，判断当前问题所需视角（代数视图、几何视图或三维视图），并调用 setPerspective 切换。",
     "",
     "### 第二阶段：逻辑解析与说明",
     "- 向用户简述几何方案。",
     "- 所有的 LaTeX 表达式必须使用$符号包裹。其中inline LaTeX使用单个$，block LaTeX使用双$$。",
+    "- **关键判断**：如果使用不确定的命令，必须先调用 searchGeoGebraCommands 搜索确认语法，不要猜测命令格式。",
     "",
     "### 第三阶段：增量绘图",
     "- 每执行 1-3 条关键命令后，简要反馈。",
     "- 示例：executeGeoGebraCommand(\"c = Circle(O, A)\") -> \"已以 O 为圆心，OA 为半径画圆。\"",
+    "- 遇到命令执行失败时，立即调用 getCanvasContext 确认当前状态，修正后重试。",
     "",
     "### 第四阶段：图形优化",
     "- 图形完成后，调用 getCanvasContext 获取最终状态。",
+    "- 使用 deleteGeoGebraObject 删除辅助对象（如辅助线、临时点等），只保留关键对象。",
     "- 优化图形布局，避免元素重叠，提升视觉效果。",
     "",
     "---",
@@ -101,10 +112,521 @@
     "- **专业性**: 使用标准的几何术语。",
     "- **简洁性**: 不要输出长篇累牍的代码，重点说明作图逻辑和结果。",
     "- **互动性**: 任务完成后，引导用户进行动态尝试。",
+    "",
+    "## 几何作图注意事项",
+    "- **旋转角度**：顺时针旋转90°就是90°，逆时针旋转90°也是90°，标注时使用实际旋转角度，不要将顺时针90°写成270°。GeoGebra的Rotate命令语法：Rotate(对象, 角度, 旋转中心)，顺时针用负角度，如Rotate(AB, -90°, A)表示绕A顺时针旋转90°。",
+    "- **角度标注**：在图中标注角度时，始终使用题目描述的实际角度值（如90°），而非等效的正角度表示（如270°）。",
   ].join("\n");
+
+  // ======= GeoGebra 命令索引 =======
+  var GGB_COMMAND_INDEX = {
+    point: { commandBase: "Point", overloads: [
+      { signature: "Point( <Object> )", paramCount: 1, paramTypes: ["Object"], description: "Creates a point on a geometric object", examples: [{ description: "Point on a line", command: "Point(Line((0,0),(1,1)))" }], note: "" },
+      { signature: "Point( <Object>, <Parameter 0-1> )", paramCount: 2, paramTypes: ["Object", "Number"], description: "Creates a point on a geometric object with given parameter", examples: [], note: "" },
+      { signature: "Point( <Point>, <Point>, <Parameter> )", paramCount: 3, paramTypes: ["Point", "Point", "Number"], description: "Creates a point on segment between two points", examples: [], note: "" }
+    ]},
+    midpoint: { commandBase: "Midpoint", overloads: [
+      { signature: "Midpoint( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Returns midpoint of two points", examples: [{ description: "Midpoint of A and B", command: "Midpoint(A, B)" }], note: "" },
+      { signature: "Midpoint( <Segment> )", paramCount: 1, paramTypes: ["Segment"], description: "Returns midpoint of a segment", examples: [], note: "" }
+    ]},
+    line: { commandBase: "Line", overloads: [
+      { signature: "Line( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates a line through two points", examples: [{ description: "Line through A and B", command: "Line(A, B)" }], note: "" },
+      { signature: "Line( <Point>, <Direction Vector> )", paramCount: 2, paramTypes: ["Point", "Vector"], description: "Creates a line through point with given direction", examples: [], note: "" }
+    ]},
+    segment: { commandBase: "Segment", overloads: [
+      { signature: "Segment( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates a segment between two points", examples: [{ description: "Segment AB", command: "Segment(A, B)" }], note: "" },
+      { signature: "Segment( <Point>, <Length> )", paramCount: 2, paramTypes: ["Point", "Number"], description: "Creates a segment from point with given length", examples: [], note: "" }
+    ]},
+    ray: { commandBase: "Ray", overloads: [
+      { signature: "Ray( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates a ray from first point through second point", examples: [{ description: "Ray from A through B", command: "Ray(A, B)" }], note: "" }
+    ]},
+    circle: { commandBase: "Circle", overloads: [
+      { signature: "Circle( <Point>, <Radius> )", paramCount: 2, paramTypes: ["Point", "Number"], description: "Creates a circle with center and radius", examples: [{ description: "Circle with center O and radius 3", command: "Circle(O, 3)" }], note: "" },
+      { signature: "Circle( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates a circle with center through a point", examples: [{ description: "Circle with center O through A", command: "Circle(O, A)" }], note: "" },
+      { signature: "Circle( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates a circle through three points (circumcircle)", examples: [{ description: "Circumcircle of triangle ABC", command: "Circle(A, B, C)" }], note: "" }
+    ]},
+    circumcircle: { commandBase: "Circumcircle", overloads: [
+      { signature: "Circumcircle( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates circumcircle of three points", examples: [{ description: "Circumcircle of ABC", command: "Circumcircle(A, B, C)" }], note: "" }
+    ]},
+    incircle: { commandBase: "Incircle", overloads: [
+      { signature: "Incircle( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates incircle of triangle defined by three points", examples: [{ description: "Incircle of ABC", command: "Incircle(A, B, C)" }], note: "" }
+    ]},
+    polygon: { commandBase: "Polygon", overloads: [
+      { signature: "Polygon( <Point>, ..., <Point> )", paramCount: -1, paramTypes: ["Point"], description: "Creates a polygon through given points", examples: [{ description: "Triangle ABC", command: "Polygon(A, B, C)" }, { description: "Quadrilateral ABCD", command: "Polygon(A, B, C, D)" }], note: "At least 3 points required" },
+      { signature: "Polygon( <Point>, <Point>, <Number of Vertices> )", paramCount: 3, paramTypes: ["Point", "Point", "Number"], description: "Creates a regular polygon", examples: [{ description: "Regular pentagon", command: "Polygon(A, B, 5)" }], note: "" }
+    ]},
+    triangle: { commandBase: "Triangle", overloads: [
+      { signature: "Triangle( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates a triangle (same as Polygon with 3 points)", examples: [{ description: "Triangle ABC", command: "Triangle(A, B, C)" }], note: "" }
+    ]},
+    trianglecenter: { commandBase: "TriangleCenter", overloads: [
+      { signature: "TriangleCenter( <Point>, <Point>, <Point>, <Number> )", paramCount: 4, paramTypes: ["Point", "Point", "Point", "Number"], description: "Creates triangle center point (1=circumcenter, 2=incenter, 3=centroid, 4=orthocenter, etc.)", examples: [{ description: "Circumcenter of ABC", command: "TriangleCenter(A, B, C, 1)" }], note: "" }
+    ]},
+    angle: { commandBase: "Angle", overloads: [
+      { signature: "Angle( <Object> )", paramCount: 1, paramTypes: ["Object"], description: "Returns angle of object", examples: [], note: "" },
+      { signature: "Angle( <Point>, <Vertex>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Returns angle between three points", examples: [{ description: "Angle ABC", command: "Angle(A, B, C)" }], note: "" },
+      { signature: "Angle( <Vector>, <Vector> )", paramCount: 2, paramTypes: ["Vector", "Vector"], description: "Returns angle between two vectors", examples: [], note: "" }
+    ]},
+    anglebisector: { commandBase: "AngleBisector", overloads: [
+      { signature: "AngleBisector( <Point>, <Vertex>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates angle bisector of angle defined by three points", examples: [{ description: "Bisector of angle ABC", command: "AngleBisector(A, B, C)" }], note: "" },
+      { signature: "AngleBisector( <Line>, <Line> )", paramCount: 2, paramTypes: ["Line", "Line"], description: "Creates angle bisector of two lines", examples: [], note: "" }
+    ]},
+    perpendicularline: { commandBase: "PerpendicularLine", overloads: [
+      { signature: "PerpendicularLine( <Point>, <Line> )", paramCount: 2, paramTypes: ["Point", "Line"], description: "Creates perpendicular line through point to given line", examples: [{ description: "Perpendicular from A to line f", command: "PerpendicularLine(A, f)" }], note: "" },
+      { signature: "PerpendicularLine( <Point>, <Direction Vector> )", paramCount: 2, paramTypes: ["Point", "Vector"], description: "Creates line through point perpendicular to direction", examples: [], note: "" }
+    ]},
+    perpendicularbisector: { commandBase: "PerpendicularBisector", overloads: [
+      { signature: "PerpendicularBisector( <Segment> )", paramCount: 1, paramTypes: ["Segment"], description: "Creates perpendicular bisector of segment", examples: [], note: "" },
+      { signature: "PerpendicularBisector( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates perpendicular bisector of two points", examples: [{ description: "Perpendicular bisector of AB", command: "PerpendicularBisector(A, B)" }], note: "" }
+    ]},
+    parallelline: { commandBase: "ParallelLine", overloads: [
+      { signature: "ParallelLine( <Point>, <Line> )", paramCount: 2, paramTypes: ["Point", "Line"], description: "Creates parallel line through point to given line", examples: [{ description: "Parallel to f through A", command: "ParallelLine(A, f)" }], note: "" }
+    ]},
+    tangent: { commandBase: "Tangent", overloads: [
+      { signature: "Tangent( <Point>, <Conic> )", paramCount: 2, paramTypes: ["Point", "Conic"], description: "Creates tangent to conic through point", examples: [], note: "" },
+      { signature: "Tangent( <Line>, <Conic> )", paramCount: 2, paramTypes: ["Line", "Conic"], description: "Creates tangent to conic parallel to line", examples: [], note: "" },
+      { signature: "Tangent( <Number>, <Conic> )", paramCount: 2, paramTypes: ["Number", "Conic"], description: "Creates tangent to conic with given index", examples: [], note: "" }
+    ]},
+    intersect: { commandBase: "Intersect", overloads: [
+      { signature: "Intersect( <Object>, <Object> )", paramCount: 2, paramTypes: ["Object", "Object"], description: "Creates intersection point(s) of two objects", examples: [{ description: "Intersection of line f and circle c", command: "Intersect(f, c)" }], note: "" },
+      { signature: "Intersect( <Object>, <Object>, <Index> )", paramCount: 3, paramTypes: ["Object", "Object", "Number"], description: "Creates intersection point with given index (when multiple)", examples: [{ description: "First intersection", command: "Intersect(f, c, 1)" }], note: "" }
+    ]},
+    distance: { commandBase: "Distance", overloads: [
+      { signature: "Distance( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Returns distance between two points", examples: [{ description: "Distance AB", command: "Distance(A, B)" }], note: "" },
+      { signature: "Distance( <Point>, <Line> )", paramCount: 2, paramTypes: ["Point", "Line"], description: "Returns distance from point to line", examples: [], note: "" },
+      { signature: "Distance( <Line>, <Line> )", paramCount: 2, paramTypes: ["Line", "Line"], description: "Returns distance between parallel lines", examples: [], note: "" }
+    ]},
+    length: { commandBase: "Length", overloads: [
+      { signature: "Length( <Object> )", paramCount: 1, paramTypes: ["Object"], description: "Returns length of object (segment, vector, etc.)", examples: [{ description: "Length of segment AB", command: "Length(Segment(A, B))" }], note: "" }
+    ]},
+    area: { commandBase: "Area", overloads: [
+      { signature: "Area( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns area of conic", examples: [], note: "" },
+      { signature: "Area( <Point>, ..., <Point> )", paramCount: -1, paramTypes: ["Point"], description: "Returns area of polygon defined by points", examples: [{ description: "Area of triangle ABC", command: "Area(A, B, C)" }], note: "" },
+      { signature: "Area( <Polygon> )", paramCount: 1, paramTypes: ["Polygon"], description: "Returns area of polygon", examples: [], note: "" }
+    ]},
+    perimeter: { commandBase: "Perimeter", overloads: [
+      { signature: "Perimeter( <Polygon> )", paramCount: 1, paramTypes: ["Polygon"], description: "Returns perimeter of polygon", examples: [], note: "" }
+    ]},
+    rotate: { commandBase: "Rotate", overloads: [
+      { signature: "Rotate( <Object>, <Angle> )", paramCount: 2, paramTypes: ["Object", "Number"], description: "Rotates object by angle around origin", examples: [{ description: "Rotate line by 90°", command: "Rotate(f, 90°)" }], note: "Use negative angle for clockwise" },
+      { signature: "Rotate( <Object>, <Angle>, <Point> )", paramCount: 3, paramTypes: ["Object", "Number", "Point"], description: "Rotates object by angle around point", examples: [{ description: "Rotate AB 90° clockwise around A", command: "Rotate(Segment(A, B), -90°, A)" }], note: "Use negative angle for clockwise" }
+    ]},
+    dilate: { commandBase: "Dilate", overloads: [
+      { signature: "Dilate( <Object>, <Factor>, <Center Point> )", paramCount: 3, paramTypes: ["Object", "Number", "Point"], description: "Dilates object from center by factor", examples: [{ description: "Dilate from O by factor 2", command: "Dilate(p, 2, O)" }], note: "" }
+    ]},
+    translate: { commandBase: "Translate", overloads: [
+      { signature: "Translate( <Object>, <Vector> )", paramCount: 2, paramTypes: ["Object", "Vector"], description: "Translates object by vector", examples: [{ description: "Translate A by vector (2,1)", command: "Translate(A, (2,1))" }], note: "" }
+    ]},
+    reflect: { commandBase: "Reflect", overloads: [
+      { signature: "Reflect( <Object>, <Point> )", paramCount: 2, paramTypes: ["Object", "Point"], description: "Reflects object at point (point reflection)", examples: [], note: "" },
+      { signature: "Reflect( <Object>, <Line> )", paramCount: 2, paramTypes: ["Object", "Line"], description: "Reflects object across line (line reflection)", examples: [{ description: "Reflect A across line f", command: "Reflect(A, f)" }], note: "" }
+    ]},
+    vector: { commandBase: "Vector", overloads: [
+      { signature: "Vector( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates vector from first to second point", examples: [{ description: "Vector from A to B", command: "Vector(A, B)" }], note: "" },
+      { signature: "Vector( <Point> )", paramCount: 1, paramTypes: ["Point"], description: "Creates position vector of point", examples: [], note: "" }
+    ]},
+    ellipse: { commandBase: "Ellipse", overloads: [
+      { signature: "Ellipse( <Focus>, <Focus>, <Semimajor Axis Length> )", paramCount: 3, paramTypes: ["Point", "Point", "Number"], description: "Creates ellipse with two foci and semimajor axis length", examples: [{ description: "Ellipse with foci F1, F2 and semimajor axis 5", command: "Ellipse(F1, F2, 5)" }], note: "" },
+      { signature: "Ellipse( <Focus>, <Focus>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates ellipse with two foci through a point", examples: [], note: "" },
+      { signature: "Ellipse( <Focus>, <Focus>, <Eccentricity> )", paramCount: 3, paramTypes: ["Point", "Point", "Number"], description: "Creates ellipse with two foci and eccentricity (0-1)", examples: [], note: "" }
+    ]},
+    hyperbola: { commandBase: "Hyperbola", overloads: [
+      { signature: "Hyperbola( <Focus>, <Focus>, <Semimajor Axis Length> )", paramCount: 3, paramTypes: ["Point", "Point", "Number"], description: "Creates hyperbola with two foci and semimajor axis length", examples: [], note: "" },
+      { signature: "Hyperbola( <Focus>, <Focus>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates hyperbola with two foci through a point", examples: [], note: "" },
+      { signature: "Hyperbola( <Focus>, <Focus>, <Eccentricity> )", paramCount: 3, paramTypes: ["Point", "Point", "Number"], description: "Creates hyperbola with two foci and eccentricity (>1)", examples: [], note: "" }
+    ]},
+    parabola: { commandBase: "Parabola", overloads: [
+      { signature: "Parabola( <Point>, <Line> )", paramCount: 2, paramTypes: ["Point", "Line"], description: "Creates parabola with focus and directrix", examples: [{ description: "Parabola with focus F and directrix d", command: "Parabola(F, d)" }], note: "" }
+    ]},
+    conic: { commandBase: "Conic", overloads: [
+      { signature: "Conic( <a>, <b>, <c>, <d>, <e>, <f> )", paramCount: 6, paramTypes: ["Number", "Number", "Number", "Number", "Number", "Number"], description: "Creates conic ax²+bxy+cy²+dx+ey+f=0", examples: [], note: "" },
+      { signature: "Conic( <Point>, ..., <Point> )", paramCount: 5, paramTypes: ["Point"], description: "Creates conic through five points", examples: [], note: "" }
+    ]},
+    function: { commandBase: "Function", overloads: [
+      { signature: "Function( <Expression>, <Start x-value>, <End x-value> )", paramCount: 3, paramTypes: ["Expression", "Number", "Number"], description: "Creates function with restricted domain", examples: [{ description: "f(x)=x² on [0,3]", command: "Function(x^2, 0, 3)" }], note: "" }
+    ]},
+    derivative: { commandBase: "Derivative", overloads: [
+      { signature: "Derivative( <Function> )", paramCount: 1, paramTypes: ["Function"], description: "Returns derivative of function", examples: [{ description: "Derivative of f", command: "Derivative(f)" }], note: "" },
+      { signature: "Derivative( <Function>, <Order> )", paramCount: 2, paramTypes: ["Function", "Number"], description: "Returns nth derivative of function", examples: [], note: "" }
+    ]},
+    integral: { commandBase: "Integral", overloads: [
+      { signature: "Integral( <Function> )", paramCount: 1, paramTypes: ["Function"], description: "Returns indefinite integral", examples: [], note: "" },
+      { signature: "Integral( <Function>, <Start>, <End> )", paramCount: 3, paramTypes: ["Function", "Number", "Number"], description: "Returns definite integral with shaded area", examples: [{ description: "Integral of f from 0 to 2", command: "Integral(f, 0, 2)" }], note: "" }
+    ]},
+    tangent_function: { commandBase: "Tangent", overloads: [
+      { signature: "Tangent( <Point>, <Function> )", paramCount: 2, paramTypes: ["Point", "Function"], description: "Creates tangent to function at point", examples: [{ description: "Tangent to f at x=2", command: "Tangent((2, f(2)), f)" }], note: "" },
+      { signature: "Tangent( <Number>, <Function> )", paramCount: 2, paramTypes: ["Number", "Function"], description: "Creates tangent to function at x-value", examples: [], note: "" }
+    ]},
+    extremum: { commandBase: "Extremum", overloads: [
+      { signature: "Extremum( <Function> )", paramCount: 1, paramTypes: ["Function"], description: "Returns extremum points of function", examples: [], note: "" },
+      { signature: "Extremum( <Function>, <Start>, <End> )", paramCount: 3, paramTypes: ["Function", "Number", "Number"], description: "Returns extremum points in interval", examples: [], note: "" }
+    ]},
+    root: { commandBase: "Root", overloads: [
+      { signature: "Root( <Function> )", paramCount: 1, paramTypes: ["Function"], description: "Returns root points of function", examples: [], note: "" },
+      { signature: "Root( <Function>, <Start>, <End> )", paramCount: 3, paramTypes: ["Function", "Number", "Number"], description: "Returns root in interval", examples: [], note: "" }
+    ]},
+    inflectionpoint: { commandBase: "InflectionPoint", overloads: [
+      { signature: "InflectionPoint( <Function> )", paramCount: 1, paramTypes: ["Function"], description: "Returns inflection points of function", examples: [], note: "" }
+    ]},
+    circulararc: { commandBase: "CircularArc", overloads: [
+      { signature: "CircularArc( <Center>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates circular arc from center through two points", examples: [], note: "" }
+    ]},
+    circularsector: { commandBase: "CircularSector", overloads: [
+      { signature: "CircularSector( <Center>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates circular sector from center through two points", examples: [], note: "" }
+    ]},
+    circumcirculararc: { commandBase: "CircumcircularArc", overloads: [
+      { signature: "CircumcircularArc( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates circumcircular arc through three points", examples: [], note: "" }
+    ]},
+    arc: { commandBase: "Arc", overloads: [
+      { signature: "Arc( <Conic>, <Parameter>, <Parameter> )", paramCount: 3, paramTypes: ["Conic", "Number", "Number"], description: "Creates arc of conic between parameters", examples: [], note: "" },
+      { signature: "Arc( <Conic>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Conic", "Point", "Point"], description: "Creates arc of conic between two points", examples: [], note: "" }
+    ]},
+    sector: { commandBase: "Sector", overloads: [
+      { signature: "Sector( <Conic>, <Parameter>, <Parameter> )", paramCount: 3, paramTypes: ["Conic", "Number", "Number"], description: "Creates conic sector", examples: [], note: "" },
+      { signature: "Sector( <Conic>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Conic", "Point", "Point"], description: "Creates conic sector between two points", examples: [], note: "" }
+    ]},
+    text: { commandBase: "Text", overloads: [
+      { signature: "Text( <Object> )", paramCount: 1, paramTypes: ["Object"], description: "Creates text representation of object", examples: [], note: "" },
+      { signature: "Text( <String>, <Point> )", paramCount: 2, paramTypes: ["String", "Point"], description: "Creates text at position", examples: [], note: "" }
+    ]},
+    formulatext: { commandBase: "FormulaText", overloads: [
+      { signature: "FormulaText( <Object> )", paramCount: 1, paramTypes: ["Object"], description: "Returns formula as text", examples: [], note: "" }
+    ]},
+    fractiontext: { commandBase: "FractionText", overloads: [
+      { signature: "FractionText( <Number> )", paramCount: 1, paramTypes: ["Number"], description: "Returns number as fraction text", examples: [], note: "" }
+    ]},
+    locus: { commandBase: "Locus", overloads: [
+      { signature: "Locus( <Point on Locus>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates locus of point depending on another point", examples: [], note: "" }
+    ]},
+    envelope: { commandBase: "Envelope", overloads: [
+      { signature: "Envelope( <Line>, <Point> )", paramCount: 2, paramTypes: ["Line", "Point"], description: "Creates envelope of line depending on point", examples: [], note: "" }
+    ]},
+    slope: { commandBase: "Slope", overloads: [
+      { signature: "Slope( <Line> )", paramCount: 1, paramTypes: ["Line"], description: "Returns slope of line", examples: [], note: "" }
+    ]},
+    radius: { commandBase: "Radius", overloads: [
+      { signature: "Radius( <Circle> )", paramCount: 1, paramTypes: ["Circle"], description: "Returns radius of circle", examples: [], note: "" }
+    ]},
+    center: { commandBase: "Center", overloads: [
+      { signature: "Center( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns center of conic", examples: [], note: "" }
+    ]},
+    focus: { commandBase: "Focus", overloads: [
+      { signature: "Focus( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns focus/foci of conic", examples: [], note: "" }
+    ]},
+    directrix: { commandBase: "Directrix", overloads: [
+      { signature: "Directrix( <Parabola> )", paramCount: 1, paramTypes: ["Parabola"], description: "Returns directrix of parabola", examples: [], note: "" }
+    ]},
+    eccentricity: { commandBase: "Eccentricity", overloads: [
+      { signature: "Eccentricity( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns eccentricity of conic", examples: [], note: "" }
+    ]},
+    semimajoraxis: { commandBase: "SemiMajorAxis", overloads: [
+      { signature: "SemiMajorAxis( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns semimajor axis length of conic", examples: [], note: "" }
+    ]},
+    semiminoraxis: { commandBase: "SemiMinorAxis", overloads: [
+      { signature: "SemiMinorAxis( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns semiminor axis length of conic", examples: [], note: "" }
+    ]},
+    asymptote: { commandBase: "Asymptote", overloads: [
+      { signature: "Asymptote( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns asymptotes of conic", examples: [], note: "" },
+      { signature: "Asymptote( <Function> )", paramCount: 1, paramTypes: ["Function"], description: "Returns asymptotes of function", examples: [], note: "" }
+    ]},
+    axes: { commandBase: "Axes", overloads: [
+      { signature: "Axes( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns axes of conic", examples: [], note: "" }
+    ]},
+    vertex: { commandBase: "Vertex", overloads: [
+      { signature: "Vertex( <Conic> )", paramCount: 1, paramTypes: ["Conic"], description: "Returns vertices of conic", examples: [], note: "" }
+    ]},
+    cone: { commandBase: "Cone", overloads: [
+      { signature: "Cone( <Point>, <Point>, <Radius> )", paramCount: 3, paramTypes: ["Point", "Point", "Number"], description: "Creates cone with base center, apex and base radius", examples: [], note: "" },
+      { signature: "Cone( <Point>, <Vector>, <Radius> )", paramCount: 3, paramTypes: ["Point", "Vector", "Number"], description: "Creates cone with base center, direction and radius", examples: [], note: "" }
+    ]},
+    cylinder: { commandBase: "Cylinder", overloads: [
+      { signature: "Cylinder( <Point>, <Point>, <Radius> )", paramCount: 3, paramTypes: ["Point", "Point", "Number"], description: "Creates cylinder between two points with radius", examples: [], note: "" }
+    ]},
+    cube: { commandBase: "Cube", overloads: [
+      { signature: "Cube( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates cube with given base edge", examples: [], note: "" }
+    ]},
+    sphere: { commandBase: "Sphere", overloads: [
+      { signature: "Sphere( <Point>, <Radius> )", paramCount: 2, paramTypes: ["Point", "Number"], description: "Creates sphere with center and radius", examples: [], note: "" }
+    ]},
+    tetrahedron: { commandBase: "Tetrahedron", overloads: [
+      { signature: "Tetrahedron( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates regular tetrahedron", examples: [], note: "" }
+    ]},
+    dodecahedron: { commandBase: "Dodecahedron", overloads: [
+      { signature: "Dodecahedron( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates regular dodecahedron", examples: [], note: "" }
+    ]},
+    icosahedron: { commandBase: "Icosahedron", overloads: [
+      { signature: "Icosahedron( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates regular icosahedron", examples: [], note: "" }
+    ]},
+    octahedron: { commandBase: "Octahedron", overloads: [
+      { signature: "Octahedron( <Point>, <Point> )", paramCount: 2, paramTypes: ["Point", "Point"], description: "Creates regular octahedron", examples: [], note: "" }
+    ]},
+    pyramid: { commandBase: "Pyramid", overloads: [
+      { signature: "Pyramid( <Point>, ..., <Point> )", paramCount: -1, paramTypes: ["Point"], description: "Creates pyramid with given base points and apex", examples: [], note: "" }
+    ]},
+    prism: { commandBase: "Prism", overloads: [
+      { signature: "Prism( <Point>, ..., <Point> )", paramCount: -1, paramTypes: ["Point"], description: "Creates prism with given base points and top point", examples: [], note: "" }
+    ]},
+    plane: { commandBase: "Plane", overloads: [
+      { signature: "Plane( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Creates plane through three points", examples: [], note: "" },
+      { signature: "Plane( <Point>, <Line> )", paramCount: 2, paramTypes: ["Point", "Line"], description: "Creates plane through point and line", examples: [], note: "" }
+    ]},
+    orthogonalplane: { commandBase: "OrthogonalPlane", overloads: [
+      { signature: "OrthogonalPlane( <Point>, <Line> )", paramCount: 2, paramTypes: ["Point", "Line"], description: "Creates plane through point orthogonal to line", examples: [], note: "" }
+    ]},
+    orthogonalvector: { commandBase: "OrthogonalVector", overloads: [
+      { signature: "OrthogonalVector( <Line> )", paramCount: 1, paramTypes: ["Line"], description: "Returns orthogonal vector of line", examples: [], note: "" },
+      { signature: "OrthogonalVector( <Vector> )", paramCount: 1, paramTypes: ["Vector"], description: "Returns orthogonal vector of vector", examples: [], note: "" }
+    ]},
+    directionvector: { commandBase: "DirectionVector", overloads: [
+      { signature: "DirectionVector( <Line> )", paramCount: 1, paramTypes: ["Line"], description: "Returns direction vector of line", examples: [], note: "" }
+    ]},
+    unitvector: { commandBase: "UnitVector", overloads: [
+      { signature: "UnitVector( <Vector> )", paramCount: 1, paramTypes: ["Vector"], description: "Returns unit vector", examples: [], note: "" }
+    ]},
+    unitperpendicularvector: { commandBase: "UnitPerpendicularVector", overloads: [
+      { signature: "UnitPerpendicularVector( <Line> )", paramCount: 1, paramTypes: ["Line"], description: "Returns unit perpendicular vector of line", examples: [], note: "" }
+    ]},
+    sequence: { commandBase: "Sequence", overloads: [
+      { signature: "Sequence( <Expression>, <Variable>, <Start>, <End> )", paramCount: 4, paramTypes: ["Expression", "Variable", "Number", "Number"], description: "Creates list of objects", examples: [{ description: "Points from 1 to 5", command: "Sequence((k, k^2), k, 1, 5)" }], note: "" },
+      { signature: "Sequence( <Expression>, <Variable>, <Start>, <End>, <Step> )", paramCount: 5, paramTypes: ["Expression", "Variable", "Number", "Number", "Number"], description: "Creates list with step", examples: [], note: "" }
+    ]},
+    zip: { commandBase: "Zip", overloads: [
+      { signature: "Zip( <Expression>, <Variable1>, <List1>, <Variable2>, <List2> )", paramCount: 5, paramTypes: ["Expression", "Variable", "List", "Variable", "List"], description: "Applies expression to pairs from lists", examples: [], note: "" }
+    ]},
+    append: { commandBase: "Append", overloads: [
+      { signature: "Append( <List>, <Object> )", paramCount: 2, paramTypes: ["List", "Object"], description: "Appends object to list", examples: [], note: "" }
+    ]},
+    element: { commandBase: "Element", overloads: [
+      { signature: "Element( <List>, <Index> )", paramCount: 2, paramTypes: ["List", "Number"], description: "Returns element of list at index", examples: [], note: "" }
+    ]},
+    take: { commandBase: "Take", overloads: [
+      { signature: "Take( <List>, <Start>, <End> )", paramCount: 3, paramTypes: ["List", "Number", "Number"], description: "Returns sublist", examples: [], note: "" }
+    ]},
+    remove: { commandBase: "Remove", overloads: [
+      { signature: "Remove( <List>, <List> )", paramCount: 2, paramTypes: ["List", "List"], description: "Removes elements from list", examples: [], note: "" }
+    ]},
+    sort: { commandBase: "Sort", overloads: [
+      { signature: "Sort( <List> )", paramCount: 1, paramTypes: ["List"], description: "Sorts list", examples: [], note: "" }
+    ]},
+    reverse: { commandBase: "Reverse", overloads: [
+      { signature: "Reverse( <List> )", paramCount: 1, paramTypes: ["List"], description: "Reverses list", examples: [], note: "" }
+    ]},
+    first: { commandBase: "First", overloads: [
+      { signature: "First( <List>, <Number> )", paramCount: 2, paramTypes: ["List", "Number"], description: "Returns first n elements of list", examples: [], note: "" }
+    ]},
+    last: { commandBase: "Last", overloads: [
+      { signature: "Last( <List>, <Number> )", paramCount: 2, paramTypes: ["List", "Number"], description: "Returns last n elements of list", examples: [], note: "" }
+    ]},
+    sum: { commandBase: "Sum", overloads: [
+      { signature: "Sum( <List> )", paramCount: 1, paramTypes: ["List"], description: "Returns sum of list elements", examples: [], note: "" },
+      { signature: "Sum( <List>, <Number> )", paramCount: 2, paramTypes: ["List", "Number"], description: "Returns sum of first n elements", examples: [], note: "" }
+    ]},
+    min: { commandBase: "Min", overloads: [
+      { signature: "Min( <Number>, <Number> )", paramCount: 2, paramTypes: ["Number", "Number"], description: "Returns minimum of two numbers", examples: [], note: "" },
+      { signature: "Min( <List> )", paramCount: 1, paramTypes: ["List"], description: "Returns minimum of list", examples: [], note: "" }
+    ]},
+    max: { commandBase: "Max", overloads: [
+      { signature: "Max( <Number>, <Number> )", paramCount: 2, paramTypes: ["Number", "Number"], description: "Returns maximum of two numbers", examples: [], note: "" },
+      { signature: "Max( <List> )", paramCount: 1, paramTypes: ["List"], description: "Returns maximum of list", examples: [], note: "" }
+    ]},
+    mean: { commandBase: "Mean", overloads: [
+      { signature: "Mean( <List> )", paramCount: 1, paramTypes: ["List"], description: "Returns mean of list", examples: [], note: "" }
+    ]},
+    sd: { commandBase: "SD", overloads: [
+      { signature: "SD( <List> )", paramCount: 1, paramTypes: ["List"], description: "Returns standard deviation of list", examples: [], note: "" }
+    ]},
+    if: { commandBase: "If", overloads: [
+      { signature: "If( <Condition>, <Then> )", paramCount: 2, paramTypes: ["Condition", "Object"], description: "Returns object if condition is true", examples: [], note: "" },
+      { signature: "If( <Condition>, <Then>, <Else> )", paramCount: 3, paramTypes: ["Condition", "Object", "Object"], description: "Returns then or else based on condition", examples: [], note: "" }
+    ]},
+    delete: { commandBase: "Delete", overloads: [
+      { signature: "Delete( <Object> )", paramCount: 1, paramTypes: ["Object"], description: "Deletes object", examples: [], note: "" }
+    ]},
+    setcaption: { commandBase: "SetCaption", overloads: [
+      { signature: "SetCaption( <Object>, <Text> )", paramCount: 2, paramTypes: ["Object", "String"], description: "Sets caption of object", examples: [], note: "" }
+    ]},
+    setcolor: { commandBase: "SetColor", overloads: [
+      { signature: "SetColor( <Object>, <Red>, <Green>, <Blue> )", paramCount: 4, paramTypes: ["Object", "Number", "Number", "Number"], description: "Sets color (0-255)", examples: [{ description: "Set A to red", command: "SetColor(A, 255, 0, 0)" }], note: "" }
+    ]},
+    "setline thickness": { commandBase: "SetLineThickness", overloads: [
+      { signature: "SetLineThickness( <Object>, <Thickness 1-13> )", paramCount: 2, paramTypes: ["Object", "Number"], description: "Sets line thickness", examples: [], note: "" }
+    ]},
+    setpointstyle: { commandBase: "SetPointStyle", overloads: [
+      { signature: "SetPointStyle( <Point>, <Style 0-9> )", paramCount: 2, paramTypes: ["Point", "Number"], description: "Sets point style (0=dot, 1=cross, 2=empty circle, etc.)", examples: [], note: "" }
+    ]},
+    setfixed: { commandBase: "SetFixed", overloads: [
+      { signature: "SetFixed( <Object>, <Boolean> )", paramCount: 2, paramTypes: ["Object", "Boolean"], description: "Fixes/unfixes object", examples: [], note: "" }
+    ]},
+    setlabelvisible: { commandBase: "SetLabelVisible", overloads: [
+      { signature: "SetLabelVisible( <Object>, <Boolean> )", paramCount: 2, paramTypes: ["Object", "Boolean"], description: "Shows/hides label of object", examples: [], note: "" }
+    ]},
+    setlabelstyle: { commandBase: "SetLabelStyle", overloads: [
+      { signature: "SetLabelStyle( <Object>, <Style> )", paramCount: 2, paramTypes: ["Object", "Number"], description: "Sets label style (0=name, 1=name+value, 2=value)", examples: [], note: "" }
+    ]},
+    setvisible: { commandBase: "SetVisible", overloads: [
+      { signature: "SetVisible( <Object>, <Boolean> )", paramCount: 2, paramTypes: ["Object", "Boolean"], description: "Shows/hides object", examples: [], note: "" }
+    ]},
+    setdynamiccoordinates: { commandBase: "DynamicCoordinates", overloads: [
+      { signature: "DynamicCoordinates( <Point>, <x>, <y> )", paramCount: 3, paramTypes: ["Point", "Number", "Number"], description: "Creates point with dynamic coordinates", examples: [], note: "" }
+    ]},
+    setvalue: { commandBase: "SetValue", overloads: [
+      { signature: "SetValue( <Object>, <Value> )", paramCount: 2, paramTypes: ["Object", "Object"], description: "Sets value of object", examples: [], note: "" }
+    ]},
+    showlabel: { commandBase: "ShowLabel", overloads: [
+      { signature: "ShowLabel( <Object>, <Boolean> )", paramCount: 2, paramTypes: ["Object", "Boolean"], description: "Shows/hides label", examples: [], note: "" }
+    ]},
+    rename: { commandBase: "Rename", overloads: [
+      { signature: "Rename( <Object>, <Name> )", paramCount: 2, paramTypes: ["Object", "String"], description: "Renames object", examples: [], note: "" }
+    ]},
+    copyfreeobject: { commandBase: "CopyFreeObject", overloads: [
+      { signature: "CopyFreeObject( <Object> )", paramCount: 1, paramTypes: ["Object"], description: "Creates free copy of dependent object", examples: [], note: "" }
+    ]},
+    corner: { commandBase: "Corner", overloads: [
+      { signature: "Corner( <Number 1-4> )", paramCount: 1, paramTypes: ["Number"], description: "Returns corner of graphics view (1=bottom-left, 2=bottom-right, 3=top-right, 4=top-left)", examples: [], note: "" }
+    ]},
+    closestpoint: { commandBase: "ClosestPoint", overloads: [
+      { signature: "ClosestPoint( <Path>, <Point> )", paramCount: 2, paramTypes: ["Path", "Point"], description: "Returns closest point on path to given point", examples: [], note: "" }
+    ]},
+    pointin: { commandBase: "PointIn", overloads: [
+      { signature: "PointIn( <Region> )", paramCount: 1, paramTypes: ["Region"], description: "Creates point inside region", examples: [], note: "" }
+    ]},
+    arecollinear: { commandBase: "AreCollinear", overloads: [
+      { signature: "AreCollinear( <Point>, <Point>, <Point> )", paramCount: 3, paramTypes: ["Point", "Point", "Point"], description: "Tests if three points are collinear", examples: [], note: "" }
+    ]},
+    areparallel: { commandBase: "AreParallel", overloads: [
+      { signature: "AreParallel( <Line>, <Line> )", paramCount: 2, paramTypes: ["Line", "Line"], description: "Tests if two lines are parallel", examples: [], note: "" }
+    ]},
+    areperpendicular: { commandBase: "ArePerpendicular", overloads: [
+      { signature: "ArePerpendicular( <Line>, <Line> )", paramCount: 2, paramTypes: ["Line", "Line"], description: "Tests if two lines are perpendicular", examples: [], note: "" }
+    ]},
+    convexhull: { commandBase: "ConvexHull", overloads: [
+      { signature: "ConvexHull( <List of Points> )", paramCount: 1, paramTypes: ["List"], description: "Creates convex hull of points", examples: [], note: "" }
+    ]},
+    delaunaytriangulation: { commandBase: "DelaunayTriangulation", overloads: [
+      { signature: "DelaunayTriangulation( <List of Points> )", paramCount: 1, paramTypes: ["List"], description: "Creates Delaunay triangulation", examples: [], note: "" }
+    ]},
+    voronoidiagram: { commandBase: "VoronoiDiagram", overloads: [
+      { signature: "VoronoiDiagram( <List of Points> )", paramCount: 1, paramTypes: ["List"], description: "Creates Voronoi diagram", examples: [], note: "" }
+    ]},
+    fitline: { commandBase: "FitLine", overloads: [
+      { signature: "FitLine( <List of Points> )", paramCount: 1, paramTypes: ["List"], description: "Creates best fit line for points", examples: [], note: "" }
+    ]},
+    fitpoly: { commandBase: "FitPoly", overloads: [
+      { signature: "FitPoly( <List of Points>, <Degree> )", paramCount: 2, paramTypes: ["List", "Number"], description: "Creates polynomial fit", examples: [], note: "" }
+    ]},
+    slider: { commandBase: "Slider", overloads: [
+      { signature: "Slider( <Min>, <Max>, <Increment>, <Speed>, <Width>, <Horizontal/Vertical> )", paramCount: 6, paramTypes: ["Number", "Number", "Number", "Number", "Number", "Boolean"], description: "Creates a slider", examples: [{ description: "Slider from 0 to 10", command: "Slider(0, 10, 0.1)" }], note: "" }
+    ]},
+    checkbox: { commandBase: "Checkbox", overloads: [
+      { signature: "Checkbox( <Caption> )", paramCount: 1, paramTypes: ["String"], description: "Creates a checkbox", examples: [], note: "" }
+    ]},
+    button: { commandBase: "Button", overloads: [
+      { signature: "Button( <Caption> )", paramCount: 1, paramTypes: ["String"], description: "Creates a button", examples: [], note: "" }
+    ]},
+    inputbox: { commandBase: "InputBox", overloads: [
+      { signature: "InputBox( <Object> )", paramCount: 1, paramTypes: ["Object"], description: "Creates input box linked to object", examples: [], note: "" }
+    ]},
+    exportimage: { commandBase: "ExportImage", overloads: [
+      { signature: "ExportImage( <Filename>, <Scale> )", paramCount: 2, paramTypes: ["String", "Number"], description: "Exports image of canvas", examples: [], note: "" }
+    ]},
+    setperspective: { commandBase: "SetPerspective", overloads: [
+      { signature: "SetPerspective( <View Code> )", paramCount: 1, paramTypes: ["String"], description: "Sets perspective (A=algebra, G=graphics, T=3D, B=probability)", examples: [{ description: "Geometry view", command: "SetPerspective(\"G\")" }, { description: "Algebra + Geometry", command: "SetPerspective(\"AG\")" }], note: "" }
+    ]},
+    setaxesvisible: { commandBase: "SetAxesVisible", overloads: [
+      { signature: "SetAxesVisible( <View Number>, <x-axis>, <y-axis> )", paramCount: 3, paramTypes: ["Number", "Boolean", "Boolean"], description: "Shows/hides axes", examples: [], note: "" }
+    ]},
+    setgridvisible: { commandBase: "SetGridVisible", overloads: [
+      { signature: "SetGridVisible( <View Number>, <Boolean> )", paramCount: 2, paramTypes: ["Number", "Boolean"], description: "Shows/hides grid", examples: [], note: "" }
+    ]},
+    setcoordystem: { commandBase: "SetCoordSystem", overloads: [
+      { signature: "SetCoordSystem( <xmin>, <xmax>, <ymin>, <ymax> )", paramCount: 4, paramTypes: ["Number", "Number", "Number", "Number"], description: "Sets coordinate system range", examples: [{ description: "Set range -5 to 5", command: "SetCoordSystem(-5, 5, -5, 5)" }], note: "" }
+    ]},
+    zoomin: { commandBase: "ZoomIn", overloads: [
+      { signature: "ZoomIn( <Factor> )", paramCount: 1, paramTypes: ["Number"], description: "Zooms in by factor", examples: [], note: "" },
+      { signature: "ZoomIn( <xmin>, <xmax>, <ymin>, <ymax> )", paramCount: 4, paramTypes: ["Number", "Number", "Number", "Number"], description: "Zooms to rectangle", examples: [], note: "" }
+    ]},
+    zoomout: { commandBase: "ZoomOut", overloads: [
+      { signature: "ZoomOut( <Factor> )", paramCount: 1, paramTypes: ["Number"], description: "Zooms out by factor", examples: [], note: "" }
+    ]},
+    pan: { commandBase: "Pan", overloads: [
+      { signature: "Pan( <x>, <y> )", paramCount: 2, paramTypes: ["Number", "Number"], description: "Pans view by offset", examples: [], note: "" }
+    ]},
+    updateconstruction: { commandBase: "UpdateConstruction", overloads: [
+      { signature: "UpdateConstruction()", paramCount: 0, paramTypes: [], description: "Recalculates all objects", examples: [], note: "" }
+    ]},
+    settooltipmode: { commandBase: "SetTooltipMode", overloads: [
+      { signature: "SetTooltipMode( <Mode 0-3> )", paramCount: 1, paramTypes: ["Number"], description: "Sets tooltip mode (0=off, 1=caption, 2=label, 3=label+value)", examples: [], note: "" }
+    ]},
+    startanimation: { commandBase: "StartAnimation", overloads: [
+      { signature: "StartAnimation( <Slider>, <Boolean> )", paramCount: 2, paramTypes: ["Slider", "Boolean"], description: "Starts/stops slider animation", examples: [], note: "" }
+    ]},
+    startrecord: { commandBase: "StartRecord", overloads: [
+      { signature: "StartRecord( <Slider> )", paramCount: 1, paramTypes: ["Slider"], description: "Starts recording slider values", examples: [], note: "" }
+    ]},
+    executescript: { commandBase: "Execute", overloads: [
+      { signature: "Execute( <List of Strings> )", paramCount: 1, paramTypes: ["List"], description: "Executes list of commands as strings", examples: [], note: "" }
+    ]},
+    setlayer: { commandBase: "SetLayer", overloads: [
+      { signature: "SetLayer( <Object>, <Layer 0-9> )", paramCount: 2, paramTypes: ["Object", "Number"], description: "Sets layer of object", examples: [], note: "" }
+    ]},
+    showlayer: { commandBase: "ShowLayer", overloads: [
+      { signature: "ShowLayer( <Layer 0-9>, <Boolean> )", paramCount: 2, paramTypes: ["Number", "Boolean"], description: "Shows/hides layer", examples: [], note: "" }
+    ]},
+  };
+
+  function searchGeoGebraCommands(query, maxResults) {
+    if (!maxResults) maxResults = 10;
+    var q = query.toLowerCase().trim();
+    var keywords = q.split(/\s+/);
+    var results = [];
+    var keys = Object.keys(GGB_COMMAND_INDEX);
+
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      var cmd = GGB_COMMAND_INDEX[key];
+      var base = cmd.commandBase.toLowerCase();
+      var score = 0;
+
+      for (var j = 0; j < keywords.length; j++) {
+        var kw = keywords[j];
+        if (base === kw) { score += 50; }
+        else if (base.indexOf(kw) === 0) { score += 30; }
+        else if (base.indexOf(kw) >= 0) { score += 10; }
+        else {
+          var matched = false;
+          for (var k = 0; k < cmd.overloads.length; k++) {
+            var sig = cmd.overloads[k].signature.toLowerCase();
+            var desc = (cmd.overloads[k].description || "").toLowerCase();
+            if (sig.indexOf(kw) >= 0 || desc.indexOf(kw) >= 0) { score += 5; matched = true; break; }
+          }
+          if (!matched) { score = -1; break; }
+        }
+      }
+
+      if (score > 0) {
+        results.push({ commandBase: cmd.commandBase, overloads: cmd.overloads, score: score });
+      }
+    }
+
+    results.sort(function (a, b) { return b.score - a.score; });
+    return results.slice(0, maxResults);
+  }
 
   // ======= 工具定义 =======
   var GGB_TOOLS = [
+    {
+      type: "function",
+      function: {
+        name: "searchGeoGebraCommands",
+        description: "搜索 GeoGebra 命令库，查询命令的签名、参数类型、描述和示例。当不确定某个命令的语法时必须先搜索确认",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "搜索关键词（英文），如 Circle、Polygon、Rotate 等，多个词用空格分隔" },
+          },
+          required: ["query"],
+        },
+      },
+    },
     {
       type: "function",
       function: {
@@ -133,6 +655,20 @@
         name: "resetGeoGebra",
         description: "重置 GeoGebra 画布，清除所有对象",
         parameters: { type: "object", properties: {} },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "deleteGeoGebraObject",
+        description: "删除 GeoGebra 画布上指定标签的对象，用于删除辅助线、临时对象等",
+        parameters: {
+          type: "object",
+          properties: {
+            label: { type: "string", description: "要删除的对象标签，如 A、c、f 等" },
+          },
+          required: ["label"],
+        },
       },
     },
     {
@@ -171,6 +707,22 @@
         },
       },
     },
+    {
+      type: "function",
+      function: {
+        name: "setUndoPoint",
+        description: "在 GeoGebra 画布上设置一个撤销点，之后可以通过 undo 工具撤销到该点",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "undo",
+        description: "撤销 GeoGebra 画布上的上一步操作，回退到最近一个撤销点",
+        parameters: { type: "object", properties: {} },
+      },
+    },
   ];
 
   // ======= 状态 =======
@@ -183,12 +735,17 @@
   var connStatus = "disconnected";
   var ggbSelection = [];
   var isSending = false;
+  var ggbUndoStack = [];
+  var ggbMode = "geometry";
+  var sendSafetyTimer = null;
 
   var $ = function (id) { return document.getElementById(id); };
 
   // ======= 初始化 =======
   document.addEventListener("DOMContentLoaded", function () {
     loadConfig();
+    try { var m = localStorage.getItem("ai-ggb-mode"); if (m) ggbMode = m; } catch(e) {}
+    syncModeUI();
     populateProviderSelect();
     initGeoGebra();
     bindEvents();
@@ -199,13 +756,7 @@
 
   // ======= GeoGebra 初始化 =======
   function updateGGBStatus(status) {
-    var el = $("ggb-status");
-    if (!el) return;
-    el.className = "ggb-status";
-    if (status === "ready") { el.textContent = "📐"; el.classList.add("ready"); el.title = "GeoGebra 就绪"; }
-    else if (status === "loading") { el.textContent = "⏳"; el.classList.add("loading"); el.title = "GeoGebra 加载中…"; }
-    else if (status === "error") { el.textContent = "❌"; el.classList.add("error"); el.title = "GeoGebra 加载失败"; }
-    else { el.textContent = "⏳"; el.classList.add("loading"); el.title = "GeoGebra 未加载"; }
+    console.log("[GGB] status:", status);
   }
 
   function initGeoGebra() {
@@ -247,10 +798,11 @@
           window.ggbApplet = api;
           window.ggbAppletReady = true;
           updateGGBStatus("ready");
+          try { api.setErrorDialogsActive(false); } catch(edErr) {}
           console.log("[GGB] evalCommand:", typeof api.evalCommand);
-          console.log("[GGB] asyncEvalCommandGetLabels:", typeof api.asyncEvalCommandGetLabels);
           console.log("[GGB] evalCommandGetLabels:", typeof api.evalCommandGetLabels);
-          console.log("[GGB] getXML:", typeof api.getXML);
+          console.log("[GGB] asyncEvalCommandGetLabels:", typeof api.asyncEvalCommandGetLabels);
+          applyGGBMode(ggbMode);
           try {
             var c = document.getElementById("geogebra-container");
             if (c) api.setSize(c.clientWidth, c.clientHeight);
@@ -290,15 +842,22 @@
   }
 
   // ======= GeoGebra 工具执行（核心！） =======
-  function handleToolCall(name, args) {
+  function handleToolCall(name, args, msgId) {
+    if (name === "searchGeoGebraCommands") {
+      try { var searchResults = searchGeoGebraCommands(args.query || "", 10); return Promise.resolve(searchResults); }
+      catch (e) { return Promise.resolve({ error: "搜索命令失败: " + e.message }); }
+    }
     if (!ggbApp) return Promise.resolve({ error: "GeoGebra 未就绪，请稍候" });
     switch (name) {
       case "getCanvasContext":
         return Promise.resolve(getCanvasContext());
       case "executeGeoGebraCommand":
-        return executeGGBCommand(args.command);
+        return executeGGBCommand(args.command, msgId);
       case "resetGeoGebra":
-        try { window.ggbLastCommandError = ""; ggbApp.reset(); ggbSelection = []; return Promise.resolve({ success: true }); }
+        try { window.ggbLastCommandError = ""; ggbApp.reset(); ggbSelection = []; ggbUndoStack = []; setTimeout(function() { applyGGBMode(ggbMode); }, 500); return Promise.resolve({ success: true }); }
+        catch (e) { return Promise.resolve({ success: false, error: e.message }); }
+      case "deleteGeoGebraObject":
+        try { var delLabel = args.label || ""; if (!delLabel) return Promise.resolve({ success: false, error: "未指定要删除的对象标签" }); var delResult = ggbApp.deleteObject(delLabel); return Promise.resolve({ success: !!delResult, label: delLabel }); }
         catch (e) { return Promise.resolve({ success: false, error: e.message }); }
       case "setPerspective":
         try { ggbApp.setPerspective(args.mode); return Promise.resolve({ success: true }); }
@@ -307,6 +866,12 @@
         return Promise.resolve({ selectedObjects: ggbSelection.slice() });
       case "evalLaTeX":
         try { var r = ggbApp.evalLaTeX(args.latex); return Promise.resolve({ success: r }); }
+        catch (e) { return Promise.resolve({ success: false, error: e.message }); }
+      case "setUndoPoint":
+        try { ggbApp.setUndoPoint(); return Promise.resolve({ success: true }); }
+        catch (e) { return Promise.resolve({ success: false, error: e.message }); }
+      case "undo":
+        try { ggbApp.undo(); return Promise.resolve({ success: true }); }
         catch (e) { return Promise.resolve({ success: false, error: e.message }); }
       default:
         return Promise.resolve({ error: "未知工具: " + name });
@@ -348,7 +913,7 @@
     }
   }
 
-  function executeGGBCommand(cmd) {
+  function executeGGBCommand(cmd, msgId) {
     if (!ggbApp) {
       console.error("[GGB] GeoGebra 未就绪，无法执行:", cmd);
       return Promise.resolve({ success: false, label: "", error: "GeoGebra 未就绪" });
@@ -357,14 +922,27 @@
 
     if (typeof ggbApp.asyncEvalCommandGetLabels === "function") {
       return ggbApp.asyncEvalCommandGetLabels(cmd).then(function (label) {
-        var lastError = window.ggbLastCommandError || "";
-        window.ggbLastCommandError = "";
-        if (lastError === "") {
-          console.log("[GGB] 命令执行成功:", cmd, "label:", label);
-        } else {
-          console.error("[GGB] 命令执行失败:", cmd, "错误:", lastError);
-        }
-        return { success: lastError === "", label: label || "", error: lastError };
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            var lastError = window.ggbLastCommandError || "";
+            window.ggbLastCommandError = "";
+            if (lastError === "") {
+              console.log("[GGB] 命令执行成功:", cmd, "label:", label);
+              if (label && msgId) {
+                var entry = ggbUndoStack.find(function (e) { return e.msgId === msgId; });
+                if (entry) { entry.labels = entry.labels.concat(label.split(",").filter(function (l) { return l; })); }
+                else { ggbUndoStack.push({ msgId: msgId, labels: label.split(",").filter(function (l) { return l; }) }); }
+              }
+            } else {
+              console.error("[GGB] 命令执行失败:", cmd, "错误:", lastError);
+            }
+            var objType = "";
+            if (lastError === "" && label) {
+              try { objType = ggbApp.getObjectType(label) || ""; } catch (ex) {}
+            }
+            resolve({ success: lastError === "", label: label || "", type: objType, error: lastError });
+          }, 20);
+        });
       }).catch(function (e) {
         console.error("[GGB] asyncEvalCommandGetLabels 异常:", cmd, e);
         return { success: false, label: "", error: e.message || String(e) };
@@ -381,7 +959,16 @@
         var lastError = window.ggbLastCommandError || "";
         window.ggbLastCommandError = "";
         console.log("[GGB] evalCommand 返回:", result, "label:", label, "error:", lastError);
-        resolve({ success: !!result && lastError === "", label: label, error: lastError || (result ? "" : "命令执行失败") });
+        if (result && label && msgId) {
+          var entry = ggbUndoStack.find(function (e) { return e.msgId === msgId; });
+          if (entry) { entry.labels = entry.labels.concat(label.split(",").filter(function (l) { return l; })); }
+          else { ggbUndoStack.push({ msgId: msgId, labels: label.split(",").filter(function (l) { return l; }) }); }
+        }
+        var objType2 = "";
+        if (result && label) {
+          try { objType2 = ggbApp.getObjectType(label) || ""; } catch (ex) {}
+        }
+        resolve({ success: !!result && lastError === "", label: label, type: objType2, error: lastError || (result ? "" : "命令执行失败") });
       } catch (e) {
         console.error("[GGB] 命令执行异常:", cmd, e);
         resolve({ success: false, label: "", error: e.message || String(e) });
@@ -389,12 +976,234 @@
     });
   }
 
+  function applyGGBMode(mode) {
+    if (!ggbApp) return;
+    try {
+      if (mode === "geometry") {
+        try {
+          var axLabels = ["AxO", "AxE", "AxY", "AxXs", "AxYs", "AxVX", "AxVY", "AxSX", "AxSY", "AxLabelX", "AxLabelY"];
+          for (var ddi = 0; ddi < axLabels.length; ddi++) { try { ggbApp.deleteObject(axLabels[ddi]); } catch(dde) {} }
+        } catch(ddErr) {}
+        try { ggbApp.setAxesVisible(1, false, false); } catch(e) { try { ggbApp.setAxesVisible(false, false); } catch(e2) {} }
+        try { ggbApp.setGridVisible(1, false); } catch(e) { try { ggbApp.setGridVisible(false); } catch(e2) {} }
+        var allNames = ggbApp.getAllObjectNames();
+        if (allNames) {
+          var names = typeof allNames === "string" ? allNames.split(",") : (Array.isArray(allNames) ? allNames : []);
+          for (var i = 0; i < names.length; i++) {
+            var name = names[i].trim();
+            if (!name) continue;
+            var type = ggbApp.getObjectType(name);
+            if (type === "point") {
+              ggbApp.setLabelVisible(name, true);
+              try { ggbApp.setPointSize(name, 1); } catch(pe) {}
+            } else if (type === "angle") {
+              var val = ggbApp.getValue(name);
+              if (Math.abs(Math.abs(val) - Math.PI / 2) < 0.01) {
+                ggbApp.setLabelVisible(name, false);
+              } else {
+                ggbApp.setVisible(name, false);
+              }
+            } else {
+              ggbApp.setLabelVisible(name, false);
+            }
+          }
+        }
+      } else {
+        try { ggbApp.setAxesVisible(false, false); } catch(e) { try { ggbApp.setAxesVisible(1, false, false); } catch(e2) {} }
+        try { ggbApp.setGridVisible(false); } catch(e) { try { ggbApp.setGridVisible(1, false); } catch(e2) {} }
+
+        var axLabels2 = ["AxO", "AxE", "AxY", "AxXs", "AxYs", "AxVX", "AxVY", "AxSX", "AxSY", "AxLabelX", "AxLabelY"];
+        for (var di2 = 0; di2 < axLabels2.length; di2++) {
+          try { ggbApp.deleteObject(axLabels2[di2]); } catch(de2) {}
+        }
+
+        var xMin = -5, xMax = 5, yMin = -5, yMax = 5;
+        try { xMin = ggbApp.getXMin(); xMax = ggbApp.getXMax(); yMin = ggbApp.getYMin(); yMax = ggbApp.getYMax(); } catch(ge) {}
+
+        var xRight = Math.round(xMax * 0.92 * 10) / 10;
+        var yTop = Math.round(yMax * 0.92 * 10) / 10;
+        var xLeft = Math.round(xMin * 0.92 * 10) / 10;
+        var yBottom = Math.round(yMin * 0.92 * 10) / 10;
+
+        console.log("[GGB] 自定义坐标轴: xMin=" + xMin + " xMax=" + xMax + " yMin=" + yMin + " yMax=" + yMax);
+        console.log("[GGB] 端点: xLeft=" + xLeft + " xRight=" + xRight + " yBottom=" + yBottom + " yTop=" + yTop);
+
+        try { ggbApp.setRepaintingActive(false); } catch(rpErr) {}
+
+        var axCmds = [
+          "AxO = (0, 0)",
+          "AxE = (" + xRight + ", 0)",
+          "AxY = (0, " + yTop + ")",
+          "AxXs = (" + xLeft + ", 0)",
+          "AxYs = (0, " + yBottom + ")"
+        ];
+
+        var axExpectedLabels = ["AxO", "AxE", "AxY", "AxXs", "AxYs"];
+
+        for (var aci = 0; aci < axCmds.length; aci++) {
+          try {
+            var ok = ggbApp.evalCommand(axCmds[aci]);
+            console.log("[GGB] evalCommand: " + axCmds[aci] + " => " + ok);
+            if (!ggbApp.exists(axExpectedLabels[aci])) {
+              console.warn("[GGB] " + axExpectedLabels[aci] + " 不存在，尝试 evalCommandGetLabels + renameObject");
+              if (typeof ggbApp.evalCommandGetLabels === "function") {
+                var rawCmds = ["(0, 0)", "(" + xRight + ", 0)", "(0, " + yTop + ")", "(" + xLeft + ", 0)", "(0, " + yBottom + ")"];
+                var gotLbl = ggbApp.evalCommandGetLabels(rawCmds[aci]);
+                if (gotLbl && gotLbl.trim() !== "") {
+                  var autoLabel = gotLbl.split(",")[0].trim();
+                  try { ggbApp.renameObject(autoLabel, axExpectedLabels[aci]); } catch(reErr) {
+                    console.warn("[GGB] rename " + autoLabel + " -> " + axExpectedLabels[aci] + " failed");
+                    axExpectedLabels[aci] = autoLabel;
+                  }
+                }
+              }
+            }
+            console.log("[GGB] 点 " + axExpectedLabels[aci] + " exists=" + ggbApp.exists(axExpectedLabels[aci]));
+          } catch(acErr) {
+            console.warn("[GGB] 创建点失败: " + axCmds[aci], acErr);
+          }
+        }
+
+        var axDepCmds = [
+          "AxVX = Vector(AxO, AxE)",
+          "AxVY = Vector(AxO, AxY)",
+          "AxSX = Segment(AxXs, AxO)",
+          "AxSY = Segment(AxYs, AxO)"
+        ];
+
+        var axDepLabels = ["AxVX", "AxVY", "AxSX", "AxSY"];
+
+        for (var adi = 0; adi < axDepCmds.length; adi++) {
+          try {
+            var dok = ggbApp.evalCommand(axDepCmds[adi]);
+            console.log("[GGB] evalCommand: " + axDepCmds[adi] + " => " + dok);
+            if (!ggbApp.exists(axDepLabels[adi])) {
+              console.warn("[GGB] " + axDepLabels[adi] + " 不存在，尝试 evalCommandGetLabels + renameObject");
+              if (typeof ggbApp.evalCommandGetLabels === "function") {
+                var rawDepCmds = ["Vector(AxO, AxE)", "Vector(AxO, AxY)", "Segment(AxXs, AxO)", "Segment(AxYs, AxO)"];
+                var gotDepLbl = ggbApp.evalCommandGetLabels(rawDepCmds[adi]);
+                if (gotDepLbl && gotDepLbl.trim() !== "") {
+                  var autoDepLabel = gotDepLbl.split(",")[0].trim();
+                  try { ggbApp.renameObject(autoDepLabel, axDepLabels[adi]); } catch(reErr2) {
+                    console.warn("[GGB] rename " + autoDepLabel + " -> " + axDepLabels[adi] + " failed");
+                    axDepLabels[adi] = autoDepLabel;
+                  }
+                }
+              }
+            }
+            console.log("[GGB] " + axDepLabels[adi] + " exists=" + ggbApp.exists(axDepLabels[adi]));
+          } catch(adErr) {
+            console.warn("[GGB] 创建依赖对象失败: " + axDepCmds[adi], adErr);
+          }
+        }
+
+        var axPts = ["AxO", "AxE", "AxY", "AxXs", "AxYs"];
+        for (var pi = 0; pi < axPts.length; pi++) {
+          var pn = axPts[pi];
+          if (ggbApp.exists(pn)) {
+            try { ggbApp.setPointSize(pn, 1); } catch(psErr) {}
+            try { ggbApp.setFixed(pn, true, false); } catch(fxErr) {}
+            if (pn !== "AxO") {
+              try { ggbApp.setVisible(pn, false); } catch(vsErr) {}
+            }
+          } else {
+            console.warn("[GGB] 点 " + pn + " 不存在，跳过样式设置");
+          }
+        }
+
+        if (ggbApp.exists("AxO")) {
+          try {
+            ggbApp.setLabelVisible("AxO", true);
+            ggbApp.setLabelStyle("AxO", 3);
+            ggbApp.setCaption("AxO", "O");
+            ggbApp.setColor("AxO", 0, 0, 0);
+          } catch(loErr) { console.warn("[GGB] AxO label error:", loErr); }
+        }
+
+        if (ggbApp.exists("AxVX")) {
+          try {
+            ggbApp.setLabelVisible("AxVX", false);
+            ggbApp.setColor("AxVX", 0, 0, 0);
+            ggbApp.setLineThickness("AxVX", 5);
+            ggbApp.setFixed("AxVX", true, false);
+          } catch(lxErr) { console.warn("[GGB] AxVX style error:", lxErr); }
+        }
+
+        if (ggbApp.exists("AxVY")) {
+          try {
+            ggbApp.setLabelVisible("AxVY", false);
+            ggbApp.setColor("AxVY", 0, 0, 0);
+            ggbApp.setLineThickness("AxVY", 5);
+            ggbApp.setFixed("AxVY", true, false);
+          } catch(lyErr) { console.warn("[GGB] AxVY style error:", lyErr); }
+        }
+
+        try {
+          var textX = ggbApp.evalCommand("AxLabelX = Text(\"x\", (" + (xRight * 0.95) + ", " + (yMin * 0.15) + "))");
+          console.log("[GGB] 创建文本 AxLabelX: " + textX);
+          if (ggbApp.exists("AxLabelX")) {
+            try { ggbApp.setColor("AxLabelX", 0, 0, 0); ggbApp.setFixed("AxLabelX", true, false); } catch(txErr) {}
+          }
+        } catch(txErr1) { console.warn("[GGB] 创建 x 文本失败:", txErr1); }
+
+        try {
+          var textY = ggbApp.evalCommand("AxLabelY = Text(\"y\", (" + (xMin * 0.15) + ", " + (yTop * 0.95) + "))");
+          console.log("[GGB] 创建文本 AxLabelY: " + textY);
+          if (ggbApp.exists("AxLabelY")) {
+            try { ggbApp.setColor("AxLabelY", 0, 0, 0); ggbApp.setFixed("AxLabelY", true, false); } catch(tyErr) {}
+          }
+        } catch(tyErr1) { console.warn("[GGB] 创建 y 文本失败:", tyErr1); }
+
+        var axHide = ["AxE", "AxY", "AxXs", "AxYs", "AxSX", "AxSY"];
+        for (var hi = 0; hi < axHide.length; hi++) {
+          if (ggbApp.exists(axHide[hi])) {
+            try { ggbApp.setLabelVisible(axHide[hi], false); } catch(hErr) {}
+          }
+        }
+        if (ggbApp.exists("AxSX")) {
+          try { ggbApp.setColor("AxSX", 0, 0, 0); ggbApp.setLineThickness("AxSX", 5); ggbApp.setFixed("AxSX", true, false); } catch(sxErr) {}
+        }
+        if (ggbApp.exists("AxSY")) {
+          try { ggbApp.setColor("AxSY", 0, 0, 0); ggbApp.setLineThickness("AxSY", 5); ggbApp.setFixed("AxSY", true, false); } catch(syErr) {}
+        }
+
+        try { ggbApp.setRepaintingActive(true); } catch(rpErr2) {}
+
+        console.log("[GGB] 坐标轴对象存在检查: AxO=" + ggbApp.exists("AxO") + " AxE=" + ggbApp.exists("AxE") + " AxY=" + ggbApp.exists("AxY") + " AxVX=" + ggbApp.exists("AxVX") + " AxVY=" + ggbApp.exists("AxVY"));
+
+        var allNames2 = ggbApp.getAllObjectNames();
+        if (allNames2) {
+          var names2 = typeof allNames2 === "string" ? allNames2.split(",") : (Array.isArray(allNames2) ? allNames2 : []);
+          for (var j = 0; j < names2.length; j++) {
+            var name2 = names2[j].trim();
+            if (!name2) continue;
+            if (name2.indexOf("Ax") === 0) continue;
+            var type2 = ggbApp.getObjectType(name2);
+            if (type2 === "point") {
+              ggbApp.setLabelVisible(name2, true);
+              try { ggbApp.setPointSize(name2, 1); } catch(pe2) {}
+            } else if (type2 === "angle") {
+              var val2 = ggbApp.getValue(name2);
+              if (Math.abs(Math.abs(val2) - Math.PI / 2) < 0.01) {
+                ggbApp.setLabelVisible(name2, false);
+              } else {
+                ggbApp.setVisible(name2, false);
+              }
+            } else {
+              ggbApp.setLabelVisible(name2, false);
+            }
+          }
+        }
+      }
+    } catch(e) {
+      console.error("[GGB] applyGGBMode error:", e);
+    }
+  }
+
   // ======= 事件绑定 =======
   function bindEvents() {
     $("chat-form").addEventListener("submit", handleSend);
     $("btn-close").addEventListener("click", function () { $("chat-panel").classList.add("hidden"); $("minimized-btn").classList.remove("hidden"); });
-    $("btn-minimize").addEventListener("click", function () { $("chat-panel").classList.add("hidden"); $("minimized-btn").classList.remove("hidden"); });
-    $("btn-refresh").addEventListener("click", function () { if (ggbApp) ggbApp.reset(); });
     $("minimized-btn").addEventListener("click", function () { $("chat-panel").classList.remove("hidden"); $("minimized-btn").classList.add("hidden"); });
     $("btn-history").addEventListener("click", function () { switchView("history"); });
     $("btn-new-conv").addEventListener("click", newConversation);
@@ -403,8 +1212,136 @@
     $("config-overlay").addEventListener("click", function () { $("config-modal").classList.remove("open"); });
     $("btn-save-config").addEventListener("click", saveConfig);
     $("provider-select").addEventListener("change", function () { config.provider = this.value; updateModelOptions(); });
+    $("stop-btn").addEventListener("click", function () {
+      if (abortController) { abortController.abort(); abortController = null; }
+      isSending = false;
+      toggleSendStop(false);
+      clearTimeout(sendSafetyTimer);
+      setConnStatus("disconnected");
+    });
+    var modeToggle = $("mode-toggle");
+    if (modeToggle) {
+      modeToggle.addEventListener("click", function(e) {
+        e.stopPropagation();
+        ggbMode = ggbMode === "geometry" ? "function" : "geometry";
+        syncModeUI();
+        applyGGBMode(ggbMode);
+        try { localStorage.setItem("ai-ggb-mode", ggbMode); } catch(ex) {}
+      });
+    }
+    // 模式选项卡切换
+    var tabChat = $("tab-chat");
+    var tabCommand = $("tab-command");
+    if (tabChat && tabCommand) {
+      tabChat.addEventListener("click", function() { switchModeTab("chat"); });
+      tabCommand.addEventListener("click", function() { switchModeTab("command"); });
+    }
+    // 命令模式提交
+    $("command-form").addEventListener("submit", handleCommandSubmit);
     initDrag();
     initResize();
+  }
+
+  // ======= 模式选项卡切换 =======
+  function switchModeTab(mode) {
+    var tabChat = $("tab-chat");
+    var tabCommand = $("tab-command");
+    var viewChat = $("view-chat");
+    var viewCommand = $("view-command");
+
+    tabChat.classList.toggle("active", mode === "chat");
+    tabCommand.classList.toggle("active", mode === "command");
+    viewChat.classList.toggle("active", mode === "chat");
+    viewCommand.classList.toggle("active", mode === "command");
+
+    if (mode === "command") {
+      $("command-input").focus();
+    }
+  }
+
+  // ======= 命令模式执行 =======
+  function handleCommandSubmit(e) {
+    e.preventDefault();
+    var input = $("command-input");
+    var cmd = input.value.trim();
+    if (!cmd) return;
+
+    // 输出命令
+    var outputDiv = $("command-output");
+    var line1 = document.createElement("div");
+    line1.className = "command-line";
+    line1.innerHTML = '<span class="command-prompt">&gt; </span>' + escapeHtml(cmd);
+    outputDiv.appendChild(line1);
+
+    input.value = "";
+
+    // 执行命令
+    var executeAndHandle = function() {
+      try {
+        var result;
+        var label = "";
+        if (typeof ggbApp.evalCommandGetLabels === "function") {
+          result = ggbApp.evalCommand(cmd);
+          if (result) {
+            label = ggbApp.evalCommandGetLabels(cmd) || "";
+          }
+        } else if (typeof ggbApp.evalCommand === "function") {
+          result = ggbApp.evalCommand(cmd);
+        }
+
+        var line2 = document.createElement("div");
+        line2.className = "command-line command-success";
+        line2.textContent = "✓ 执行成功" + (label ? " (标签: " + label + ")" : "");
+        outputDiv.appendChild(line2);
+
+        // 记录到撤销栈 (使用正确的格式)
+        if (ggbApp) {
+          var entry = { msgId: "cmd-" + Date.now(), labels: label ? label.split(",").filter(function(l){return l;}) : [] };
+          ggbUndoStack.push(entry);
+        }
+      } catch (ex) {
+        var line3 = document.createElement("div");
+        line3.className = "command-line command-error";
+        line3.textContent = "✗ 执行失败: " + (ex.message || String(ex));
+        outputDiv.appendChild(line3);
+      }
+
+      outputDiv.scrollTop = outputDiv.scrollHeight;
+    };
+
+    executeAndHandle();
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function toggleSendStop(showStop) {
+    var sendBtn = $("send-btn");
+    var stopBtn = $("stop-btn");
+    if (showStop) {
+      sendBtn.classList.add("hidden");
+      stopBtn.classList.remove("hidden");
+    } else {
+      sendBtn.classList.remove("hidden");
+      stopBtn.classList.add("hidden");
+    }
+  }
+
+  function syncModeUI() {
+    var badge = $("mode-toggle");
+    if (!badge) return;
+    if (ggbMode === "geometry") {
+      badge.textContent = "几何";
+      badge.classList.remove("fn");
+      badge.title = "当前：几何模式（点击切换为函数模式）";
+    } else {
+      badge.textContent = "函数";
+      badge.classList.add("fn");
+      badge.title = "当前：函数模式（点击切换为几何模式）";
+    }
   }
 
   // ======= 视图切换 =======
@@ -486,8 +1423,13 @@
   // ======= 聊天 =======
   function handleSend(e) {
     e.preventDefault();
-    if (isSending) return;
-    var input = $("chat-input"), content = input.value.trim();
+    var input = $("chat-input");
+    if (isSending) {
+      input.style.borderColor = "var(--red)";
+      setTimeout(function() { input.style.borderColor = ""; }, 1500);
+      return;
+    }
+    var content = input.value.trim();
     if (!content) return;
     if (!config.apiKey) { $("config-modal").classList.add("open"); return; }
     input.value = "";
@@ -502,18 +1444,30 @@
     isSending = true;
     abortController = new AbortController();
     setConnStatus("connecting");
+    toggleSendStop(true);
 
-    var assistantMsg = { id: "m" + Date.now(), role: "assistant", content: "⏳ 思考中..." };
-    messages.push(assistantMsg);
-    renderMessages();
+    sendSafetyTimer = setTimeout(function() {
+      if (isSending) {
+        console.warn("[AI] 安全超时：强制重置 isSending");
+        isSending = false;
+        setConnStatus("error");
+        toggleSendStop(false);
+      }
+    }, 120000);
 
     var systemPrompt = config.systemPrompt || SYSTEM_PROMPT;
+    systemPrompt += "\n\n## 当前模式\n当前画布模式为「" + (ggbMode === "geometry" ? "几何模式" : "函数模式") + "」。" + (ggbMode === "geometry" ? "几何模式下，请只标注点和直角符号，不标注其他内容，不显示坐标轴和网格。" : "函数模式下，显示坐标轴（含xOy标签，不含单位刻度和网格），只标注点和直角符号，不标注其他内容。");
     var baseUrl = config.baseUrl || PROVIDER_CONFIG[config.provider].baseUrl;
     if (config.useProxy && config.proxyUrl) baseUrl = config.proxyUrl + "/" + baseUrl.replace(/^https?:\/\//, "");
 
     var apiMessages = [{ role: "system", content: systemPrompt }].concat(
-      msgHistory.map(function (m) { return { role: m.role, content: m.content }; })
+      buildApiMessages(msgHistory)
     );
+    console.log("[AI] apiMessages:", JSON.stringify(apiMessages.map(function(m) { return { role: m.role, content: (m.content || "").slice(0, 50), hasToolCalls: !!m.tool_calls }; })));
+
+    var assistantMsg = { id: "m" + Date.now(), role: "assistant", content: "⏳ 思考中...", rawContent: "", commands: [], _toolRounds: [] };
+    messages.push(assistantMsg);
+    renderMessages();
 
     var requestBody = {
       model: config.model,
@@ -547,31 +1501,40 @@
         console.log("[AI] 工具调用:", msg.tool_calls ? msg.tool_calls.length + " 个" : "无");
 
         assistantMsg.content = msg.content || "";
+        assistantMsg.rawContent = msg.content || "";
 
         if (msg.tool_calls && msg.tool_calls.length > 0) {
+          assistantMsg._toolRounds.push({ tool_calls: msg.tool_calls, tool_results: [] });
           return processToolCalls(msg.tool_calls, assistantMsg, msgHistory, apiMessages, msg);
         }
 
         renderMessages();
         saveConversation();
         isSending = false;
+        toggleSendStop(false);
+        clearTimeout(sendSafetyTimer);
       })
       .catch(function (err) {
         console.error("[AI] 请求失败:", err);
+        console.error("[AI] 错误详情:", err.message, err.stack);
         if (err.name === "AbortError") { setConnStatus("disconnected"); }
         else {
           setConnStatus("error");
-          assistantMsg.content = "❌ 请求失败: " + err.message;
-          if (err.message.indexOf("Failed to fetch") >= 0 || err.message.indexOf("NetworkError") >= 0) {
+          if (!assistantMsg.content || assistantMsg.content === "⏳ 思考中...") {
+            assistantMsg.content = "❌ 请求失败: " + err.message;
+          }
+          if (err.message && (err.message.indexOf("Failed to fetch") >= 0 || err.message.indexOf("NetworkError") >= 0)) {
             assistantMsg.content += "\n\n💡 这可能是 CORS 问题，请在设置中启用 CORS 代理。";
           }
         }
         renderMessages();
         isSending = false;
+        toggleSendStop(false);
+        clearTimeout(sendSafetyTimer);
       });
-  }
+    }
 
-  // 处理 tool_calls 并继续对话
+    // 处理 tool_calls 并继续对话
   function processToolCalls(toolCalls, assistantMsg, msgHistory, apiMessages, aiMessage) {
     console.log("[Tool] 处理 " + toolCalls.length + " 个工具调用");
     var toolPromises = toolCalls.map(function (tc) {
@@ -579,14 +1542,14 @@
       var args;
       try { args = JSON.parse(tc.function.arguments || "{}"); } catch (e) { args = {}; }
       console.log("[Tool] 调用:", name, args);
-      return handleToolCall(name, args).then(function (result) {
+      return handleToolCall(name, args, assistantMsg.id).then(function (result) {
         console.log("[Tool] 结果:", name, result);
         return { id: tc.id, name: name, args: args, result: result };
       });
     });
 
     return Promise.all(toolPromises).then(function (results) {
-      // 在消息中显示工具调用结果
+      setConnStatus("connected");
       var toolResultParts = [];
       for (var i = 0; i < results.length; i++) {
         var r = results[i];
@@ -598,12 +1561,36 @@
         else resultStr = " → " + JSON.stringify(r.result).slice(0, 150);
 
         assistantMsg.content += "\n🔧 " + r.name + (cmdStr ? "(" + cmdStr + ")" : "") + resultStr + "\n";
+
+        if (r.name === "executeGeoGebraCommand" && cmdStr) {
+          assistantMsg.commands.push({
+            command: cmdStr,
+            label: (r.result && r.result.label) || "",
+            type: (r.result && r.result.type) || "",
+            success: !!(r.result && r.result.success),
+            error: (r.result && r.result.error) || ""
+          });
+        }
+
         toolResultParts.push({ tool_call_id: r.id, name: r.name, result: r.result });
+      }
+      var currentRound = assistantMsg._toolRounds[assistantMsg._toolRounds.length - 1];
+      if (currentRound) {
+        for (var ri = 0; ri < toolResultParts.length; ri++) {
+          currentRound.tool_results.push({ tool_call_id: toolResultParts[ri].tool_call_id, content: JSON.stringify(toolResultParts[ri].result) });
+        }
       }
       renderMessages();
 
-      // 将工具结果发回给 AI，让它继续推理
+      applyGGBMode(ggbMode);
       return continueWithToolResults(apiMessages, aiMessage, toolResultParts, assistantMsg, msgHistory);
+    }).catch(function (err) {
+      console.error("[Tool] 工具调用链异常:", err);
+      assistantMsg.content += "\n❌ 工具调用异常: " + (err.message || String(err));
+      renderMessages();
+      isSending = false;
+      toggleSendStop(false);
+      clearTimeout(sendSafetyTimer);
     });
   }
 
@@ -613,7 +1600,8 @@
     var newApiMessages = apiMessages.slice();
 
     // 添加 AI 的 tool_calls 消息
-    var aiMsgForApi = { role: "assistant", content: aiMessage.content || "" };
+    var aiMsgForApi = { role: "assistant" };
+    aiMsgForApi.content = aiMessage.content || null;
     if (aiMessage.tool_calls) {
       aiMsgForApi.tool_calls = aiMessage.tool_calls;
     }
@@ -652,28 +1640,33 @@
       })
       .then(function (data) {
         var choice = data.choices && data.choices[0];
-        if (!choice) return;
+        if (!choice) { isSending = false; toggleSendStop(false); clearTimeout(sendSafetyTimer); return; }
 
         var msg = choice.message;
 
-        // 追加 AI 的后续回复
         if (msg.content) {
           assistantMsg.content += msg.content;
+          assistantMsg.rawContent += msg.content;
         }
 
-        // 如果 AI 又调用了工具，继续处理
         if (msg.tool_calls && msg.tool_calls.length > 0) {
+          assistantMsg._toolRounds.push({ tool_calls: msg.tool_calls, tool_results: [] });
           return processToolCalls(msg.tool_calls, assistantMsg, msgHistory, newApiMessages, msg);
         }
 
+        applyGGBMode(ggbMode);
         renderMessages();
         saveConversation();
         isSending = false;
+        toggleSendStop(false);
+        clearTimeout(sendSafetyTimer);
       })
       .catch(function (err) {
         if (err.name !== "AbortError") assistantMsg.content += "\n❌ " + err.message;
         renderMessages();
         isSending = false;
+        toggleSendStop(false);
+        clearTimeout(sendSafetyTimer);
       });
   }
 
@@ -681,26 +1674,42 @@
   function renderMessages() {
     var container = $("messages-list");
     container.innerHTML = "";
-    var lastUserIdx = -1;
-    var hasAssistantAfter = false;
-    for (var i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant") hasAssistantAfter = true;
-      if (messages[i].role === "user" && hasAssistantAfter) { lastUserIdx = i; break; }
-    }
     messages.forEach(function (msg, idx) {
       var div = document.createElement("div");
       div.className = "message " + msg.role;
-      if (idx === lastUserIdx) div.classList.add("sticky-user");
-      var dc = escapeHtml(msg.content);
-      dc = dc.replace(/🔧 (\w+)(\([^)]*\))?/g, '<span style="color:var(--orange);font-weight:600">🔧 $1$2</span>');
-      dc = dc.replace(/✅/g, '<span style="color:var(--green)">✅</span>');
-      dc = dc.replace(/❌/g, '<span style="color:var(--red)">❌</span>');
-      dc = dc.replace(/📐/g, '<span style="color:var(--blue)">📐</span>');
+      var lastUserIdx = -1;
+      for (var fi = messages.length - 1; fi >= 0; fi--) {
+        if (messages[fi].role === "user") { lastUserIdx = fi; break; }
+      }
+      if (msg.role === "user" && idx === lastUserIdx) div.classList.add("sticky-user");
+      var dc = formatMessageContent(msg.content);
+      var cmdHtml = "";
+      if (msg.role === "assistant" && msg.commands && msg.commands.length > 0) {
+        cmdHtml = '<div class="cmd-list">' +
+          '<div class="cmd-header" data-idx="' + idx + '">' +
+            '<span class="cmd-toggle">▶</span> ' +
+            '<span class="cmd-count">' + msg.commands.length + ' 条命令</span>' +
+            '<button class="cmd-rerun" data-idx="' + idx + '" title="重运行所有命令">⟳ 重运行</button>' +
+          '</div>' +
+          '<div class="cmd-items hidden" data-idx="' + idx + '">';
+        for (var ci = 0; ci < msg.commands.length; ci++) {
+          var cmd = msg.commands[ci];
+          cmdHtml += '<div class="cmd-item' + (cmd.success ? " ok" : " fail") + '">' +
+            '<span class="cmd-status">' + (cmd.success ? "✅" : "❌") + '</span>' +
+            '<code class="cmd-text">' + escapeHtml(cmd.command) + '</code>' +
+            (cmd.label ? '<span class="cmd-label">→ ' + escapeHtml(cmd.label) + '</span>' : "") +
+            (cmd.error ? '<span class="cmd-error">' + escapeHtml(cmd.error) + '</span>' : "") +
+            '<button class="cmd-rerun-one" data-idx="' + idx + '" data-ci="' + ci + '" title="重运行此命令">▶</button>' +
+          '</div>';
+        }
+        cmdHtml += '</div></div>';
+      }
       div.innerHTML =
         '<div class="message-content">' + dc + '</div>' +
+        cmdHtml +
         '<div class="message-actions">' +
           '<button class="msg-action" data-action="copy" data-idx="' + idx + '" title="复制"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>' +
-          (msg.role === "user" ? '<button class="msg-action" data-action="retract" data-idx="' + idx + '" title="撤回"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 7"/></svg></button>' : "") +
+          (msg.role === "user" ? '<button class="msg-action" data-action="retract" data-idx="' + idx + '" title="撤回"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h14"/></svg></button>' : "") +
           (msg.role === "assistant" ? '<button class="msg-action" data-action="regenerate" data-idx="' + idx + '" title="重新生成"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>' : "") +
         "</div>";
       container.appendChild(div);
@@ -708,26 +1717,254 @@
     container.scrollTop = container.scrollHeight;
   }
 
+  function formatMessageContent(text) {
+    if (!text) return "";
+    var html = escapeHtml(text);
+    html = html.replace(/🔧 (\w+)(\([^)]*\))?/g, '<span style="color:var(--orange);font-weight:600">🔧 $1$2</span>');
+    html = html.replace(/✅/g, '<span style="color:var(--green)">✅</span>');
+    html = html.replace(/❌/g, '<span style="color:var(--red)">❌</span>');
+    html = html.replace(/📐/g, '<span style="color:var(--blue)">📐</span>');
+    html = renderLaTeX(html);
+    return html;
+  }
+
+  function renderLaTeX(html) {
+    if (typeof katex === "undefined") return html;
+    function unescapeEntities(s) {
+      return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    }
+    html = html.replace(/\$\$([\s\S]*?)\$\$/g, function (match, tex) {
+      try { return '<div class="katex-block">' + katex.renderToString(unescapeEntities(tex.trim()), { displayMode: true, throwOnError: false }) + '</div>'; } catch (e) { return match; }
+    });
+    html = html.replace(/\$([^\$\n]+?)\$/g, function (match, tex) {
+      try { return katex.renderToString(unescapeEntities(tex.trim()), { displayMode: false, throwOnError: false }); } catch (e) { return match; }
+    });
+    return html;
+  }
+
   document.addEventListener("click", function (e) {
     var btn = e.target.closest(".msg-action");
-    if (!btn) return;
+    if (!btn) {
+      var cmdHeader = e.target.closest(".cmd-header");
+      if (cmdHeader) {
+        var toggleIdx = cmdHeader.getAttribute("data-idx");
+        var items = document.querySelector('.cmd-items[data-idx="' + toggleIdx + '"]');
+        var toggleIcon = cmdHeader.querySelector(".cmd-toggle");
+        if (items) {
+          items.classList.toggle("hidden");
+          if (toggleIcon) toggleIcon.textContent = items.classList.contains("hidden") ? "▶" : "▼";
+        }
+        return;
+      }
+      var rerunBtn = e.target.closest(".cmd-rerun");
+      if (rerunBtn) {
+        var rerunIdx = parseInt(rerunBtn.getAttribute("data-idx"), 10);
+        rerunCommands(rerunIdx);
+        return;
+      }
+      var rerunOneBtn = e.target.closest(".cmd-rerun-one");
+      if (rerunOneBtn) {
+        var oneIdx = parseInt(rerunOneBtn.getAttribute("data-idx"), 10);
+        var oneCi = parseInt(rerunOneBtn.getAttribute("data-ci"), 10);
+        rerunOneCommand(oneIdx, oneCi);
+        return;
+      }
+      return;
+    }
     var action = btn.getAttribute("data-action");
     var idx = parseInt(btn.getAttribute("data-idx"), 10);
     if (action === "copy") navigator.clipboard.writeText(messages[idx].content).catch(function () {});
-    else if (action === "retract") { messages = messages.slice(0, idx); renderMessages(); saveConversation(); }
-    else if (action === "regenerate") {
+    else if (action === "retract") {
+      var removedMsgs = messages.slice(idx);
       messages = messages.slice(0, idx);
+      undoGGBForMsgs(removedMsgs);
+      renderMessages(); saveConversation();
+    }
+    else if (action === "regenerate") {
+      var removedMsgs2 = messages.slice(idx);
+      messages = messages.slice(0, idx);
+      undoGGBForMsgs(removedMsgs2);
       var lu = messages.slice().reverse().find(function (m) { return m.role === "user"; });
       if (lu) { messages = messages.slice(0, messages.indexOf(lu) + 1); renderMessages(); sendToAI(messages); }
+      else { renderMessages(); saveConversation(); }
     }
   });
+
+  function undoGGBForMsgs(removedMsgs) {
+    if (!ggbApp) return;
+    var idsToRemove = [];
+    for (var i = 0; i < removedMsgs.length; i++) {
+      idsToRemove.push(removedMsgs[i].id);
+    }
+    var labelsToDelete = [];
+    ggbUndoStack = ggbUndoStack.filter(function (entry) {
+      if (idsToRemove.indexOf(entry.msgId) >= 0) {
+        labelsToDelete = labelsToDelete.concat(entry.labels);
+        return false;
+      }
+      return true;
+    });
+    for (var j = 0; j < labelsToDelete.length; j++) {
+      try { ggbApp.deleteObject(labelsToDelete[j]); } catch (e) {}
+    }
+  }
+
+  function rerunCommands(msgIdx) {
+    var msg = messages[msgIdx];
+    if (!msg || !msg.commands || msg.commands.length === 0) return;
+    if (!ggbApp) { console.warn("[Rerun] GeoGebra 未就绪"); return; }
+    console.log("[Rerun] 重运行 " + msg.commands.length + " 条命令");
+    var i = 0;
+    function runNext() {
+      if (i >= msg.commands.length) {
+        applyGGBMode(ggbMode);
+        console.log("[Rerun] 全部命令重运行完毕");
+        return;
+      }
+      var cmd = msg.commands[i];
+      console.log("[Rerun] 执行:", cmd.command);
+      if (typeof ggbApp.asyncEvalCommandGetLabels === "function") {
+        ggbApp.asyncEvalCommandGetLabels(cmd.command).then(function (label) {
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              var lastError = window.ggbLastCommandError || "";
+              window.ggbLastCommandError = "";
+              cmd.success = lastError === "";
+              cmd.error = lastError;
+              cmd.label = label || cmd.label;
+              if (lastError === "" && label) {
+                try { cmd.type = ggbApp.getObjectType(label) || ""; } catch (ex) {}
+              }
+              resolve();
+            }, 20);
+          });
+        }).then(function () {
+          i++;
+          setTimeout(runNext, 100);
+        }).catch(function (e) {
+          cmd.success = false;
+          cmd.error = e.message || String(e);
+          i++;
+          setTimeout(runNext, 100);
+        });
+      } else {
+        try {
+          var result = ggbApp.evalCommand(cmd.command);
+          cmd.success = !!result;
+          if (!result) cmd.error = "命令执行失败";
+        } catch (e) {
+          cmd.success = false;
+          cmd.error = e.message;
+        }
+        i++;
+        setTimeout(runNext, 100);
+      }
+    }
+    runNext();
+    renderMessages();
+  }
+
+  function rerunOneCommand(msgIdx, cmdIdx) {
+    var msg = messages[msgIdx];
+    if (!msg || !msg.commands || !msg.commands[cmdIdx]) return;
+    if (!ggbApp) { console.warn("[Rerun] GeoGebra 未就绪"); return; }
+    var cmd = msg.commands[cmdIdx];
+    console.log("[Rerun] 单条重运行:", cmd.command);
+    if (typeof ggbApp.asyncEvalCommandGetLabels === "function") {
+      ggbApp.asyncEvalCommandGetLabels(cmd.command).then(function (label) {
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            var lastError = window.ggbLastCommandError || "";
+            window.ggbLastCommandError = "";
+            cmd.success = lastError === "";
+            cmd.error = lastError;
+            cmd.label = label || cmd.label;
+            if (lastError === "" && label) {
+              try { cmd.type = ggbApp.getObjectType(label) || ""; } catch (ex) {}
+            }
+            resolve();
+          }, 20);
+        });
+      }).then(function () {
+        applyGGBMode(ggbMode);
+        renderMessages();
+      }).catch(function (e) {
+        cmd.success = false;
+        cmd.error = e.message || String(e);
+        renderMessages();
+      });
+    } else {
+      try {
+        var result = ggbApp.evalCommand(cmd.command);
+        cmd.success = !!result;
+        if (!result) cmd.error = "命令执行失败";
+      } catch (e) {
+        cmd.success = false;
+        cmd.error = e.message;
+      }
+      applyGGBMode(ggbMode);
+      renderMessages();
+    }
+  }
+
+  function buildApiMessages(msgHistory) {
+    var result = [];
+    for (var i = 0; i < msgHistory.length; i++) {
+      var m = msgHistory[i];
+      if (m.role === "tool") continue;
+
+      if (m.role === "assistant") {
+        var apiMsg = { role: "assistant" };
+        apiMsg.content = m.rawContent !== undefined && m.rawContent !== null ? m.rawContent : (m.content || "");
+        apiMsg.content = apiMsg.content.replace(/\n🔧 [^\n]*/g, "").trim();
+        if (!apiMsg.content) apiMsg.content = null;
+
+        if (m._toolRounds && m._toolRounds.length > 0) {
+          apiMsg.tool_calls = m._toolRounds[0].tool_calls;
+        }
+
+        result.push(apiMsg);
+
+        if (m._toolRounds && m._toolRounds.length > 0) {
+          for (var ri = 0; ri < m._toolRounds.length; ri++) {
+            var round = m._toolRounds[ri];
+            if (ri > 0) {
+              var midMsg = { role: "assistant", content: null, tool_calls: round.tool_calls };
+              result.push(midMsg);
+            }
+            for (var ti = 0; ti < round.tool_results.length; ti++) {
+              result.push({
+                role: "tool",
+                tool_call_id: round.tool_results[ti].tool_call_id,
+                content: round.tool_results[ti].content,
+              });
+            }
+          }
+        }
+      } else {
+        var c = m.content || "";
+        result.push({ role: m.role, content: c });
+      }
+    }
+    return result;
+  }
 
   function escapeHtml(t) { var d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
 
   // ======= 对话历史 =======
   function loadConversations() {
     try { var s = localStorage.getItem("ai-ggb-conversations"); if (s) conversations = JSON.parse(s); } catch (e) {}
-    if (conversations.length > 0) { currentConversationId = conversations[0].id; messages = conversations[0].messages; }
+    if (conversations.length > 0) {
+      currentConversationId = conversations[0].id;
+      messages = conversations[0].messages;
+      for (var i = 0; i < messages.length; i++) {
+        if (messages[i].role === "assistant") {
+          if (!messages[i].commands) messages[i].commands = [];
+          if (!messages[i]._toolRounds) messages[i]._toolRounds = [];
+        }
+      }
+      ggbUndoStack = [];
+    }
     else newConversation();
   }
   function saveConversation() {
@@ -742,10 +1979,10 @@
       var d = document.createElement("div");
       d.className = "history-item" + (conv.id === currentConversationId ? " active" : "");
       d.innerHTML = '<div class="history-title">' + escapeHtml(conv.title) + '</div><div class="history-date">' + new Date(conv.createdAt).toLocaleString() + '</div>';
-      d.addEventListener("click", function () { currentConversationId = conv.id; messages = conv.messages; renderMessages(); switchView("chat"); });
+      d.addEventListener("click", function () { currentConversationId = conv.id; messages = conv.messages; ggbUndoStack = []; renderMessages(); switchView("chat"); });
       c.appendChild(d);
     });
   }
-  function newConversation() { currentConversationId = "c" + Date.now(); messages = []; renderMessages(); switchView("chat"); }
+  function newConversation() { currentConversationId = "c" + Date.now(); messages = []; ggbUndoStack = []; renderMessages(); switchView("chat"); }
 
 })();
