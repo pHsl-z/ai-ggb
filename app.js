@@ -9,14 +9,12 @@
     google: { name: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com", models: ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"] },
     qwen: { name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen-coder-plus-latest", "qwen-max-latest", "qwen-plus-latest", "qwen-turbo-latest", "qwen3-max", "qwen3-plus", "qwen3-mini"] },
     zhipu: { name: "智谱AI", baseUrl: "https://open.bigmodel.cn/api/paas/v4", models: ["GLM-4-Plus", "GLM-4-0520", "GLM-4-Air", "GLM-4-AirX", "GLM-4-Long", "GLM-4-Flash"] },
-    moonshot: { name: "月之暗面", baseUrl: "https://api.moonshot.cn/v1", models: ["moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k"] },
-    baichuan: { name: "百川智能", baseUrl: "https://api.baichuan-ai.com/v1", models: ["Baichuan4", "Baichuan3-Turbo", "Baichuan3"] },
-    yi: { name: "零一万物", baseUrl: "https://api.lingyiwanwu.com/v1", models: ["yi-lightning", "yi-large", "yi-medium", "yi-spark"] },
+    kimi: { name: "Kimi", baseUrl: "https://api.moonshot.cn/v1", models: ["moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k"] },
     minimax: { name: "MiniMax", baseUrl: "https://api.minimax.chat/v1", models: ["MiniMax-Text-01", "MiniMax-Text-01-Preview"] },
-    stepfun: { name: "阶跃星辰", baseUrl: "https://api.stepfun.com/v1", models: ["step-3o-mini", "step-3o-128k", "step-2-flash", "step-2-128k", "step-2"] },
     groq: { name: "Groq", baseUrl: "https://api.groq.com/openai/v1", models: ["llama-3.3-70b-versatile", "llama-3.3-8b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant"] },
     mistral: { name: "Mistral", baseUrl: "https://api.mistral.ai/v1", models: ["mistral-large-latest", "pixtral-large-latest", "mistral-small-latest", "codestral-latest"] },
-    perplexity: { name: "Perplexity", baseUrl: "https://api.perplexity.ai", models: ["sonar-reasoning-pro", "sonar-reasoning", "sonar-pro", "sonar"] },
+    bailian: { name: "阿里云百炼", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen-coder-plus-latest", "qwen-max-latest", "qwen-plus-latest", "qwen-turbo-latest", "qwen3-max", "qwen3-plus", "qwen3-mini"] },
+    ark: { name: "火山方舟", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", models: ["ep-20241027190328-9w87x-ep", "ep-20241027190328-9w87x-ep"] },
   };
 
   // ======= 完整 System Prompt =======
@@ -811,6 +809,19 @@
               else if (event.type === "deselect") ggbSelection = ggbSelection.filter(function (l) { return l !== event.target; });
             });
           } catch (e) { console.warn("[GGB] 初始化设置失败:", e); }
+
+          var ggbResizeTimer = null;
+          function ggbResizeHandler() {
+            if (!ggbApp) return;
+            var cont = document.getElementById("geogebra-container");
+            if (cont) {
+              try { ggbApp.setSize(cont.clientWidth, cont.clientHeight); } catch(re) {}
+            }
+          }
+          window.addEventListener("resize", function() {
+            clearTimeout(ggbResizeTimer);
+            ggbResizeTimer = setTimeout(ggbResizeHandler, 150);
+          });
         },
       };
 
@@ -1008,176 +1019,21 @@
             }
           }
         }
-      } else {
-        try { ggbApp.setAxesVisible(false, false); } catch(e) { try { ggbApp.setAxesVisible(1, false, false); } catch(e2) {} }
-        try { ggbApp.setGridVisible(false); } catch(e) { try { ggbApp.setGridVisible(1, false); } catch(e2) {} }
-
+      } else if (mode === "function") {
         var axLabels2 = ["AxO", "AxE", "AxY", "AxXs", "AxYs", "AxVX", "AxVY", "AxSX", "AxSY", "AxLabelX", "AxLabelY"];
         for (var di2 = 0; di2 < axLabels2.length; di2++) {
           try { ggbApp.deleteObject(axLabels2[di2]); } catch(de2) {}
         }
-
-        var xMin = -5, xMax = 5, yMin = -5, yMax = 5;
-        try { xMin = ggbApp.getXMin(); xMax = ggbApp.getXMax(); yMin = ggbApp.getYMin(); yMax = ggbApp.getYMax(); } catch(ge) {}
-
-        var xRight = Math.round(xMax * 0.92 * 10) / 10;
-        var yTop = Math.round(yMax * 0.92 * 10) / 10;
-        var xLeft = Math.round(xMin * 0.92 * 10) / 10;
-        var yBottom = Math.round(yMin * 0.92 * 10) / 10;
-
-        console.log("[GGB] 自定义坐标轴: xMin=" + xMin + " xMax=" + xMax + " yMin=" + yMin + " yMax=" + yMax);
-        console.log("[GGB] 端点: xLeft=" + xLeft + " xRight=" + xRight + " yBottom=" + yBottom + " yTop=" + yTop);
-
-        try { ggbApp.setRepaintingActive(false); } catch(rpErr) {}
-
-        var axCmds = [
-          "AxO = (0, 0)",
-          "AxE = (" + xRight + ", 0)",
-          "AxY = (0, " + yTop + ")",
-          "AxXs = (" + xLeft + ", 0)",
-          "AxYs = (0, " + yBottom + ")"
-        ];
-
-        var axExpectedLabels = ["AxO", "AxE", "AxY", "AxXs", "AxYs"];
-
-        for (var aci = 0; aci < axCmds.length; aci++) {
-          try {
-            var ok = ggbApp.evalCommand(axCmds[aci]);
-            console.log("[GGB] evalCommand: " + axCmds[aci] + " => " + ok);
-            if (!ggbApp.exists(axExpectedLabels[aci])) {
-              console.warn("[GGB] " + axExpectedLabels[aci] + " 不存在，尝试 evalCommandGetLabels + renameObject");
-              if (typeof ggbApp.evalCommandGetLabels === "function") {
-                var rawCmds = ["(0, 0)", "(" + xRight + ", 0)", "(0, " + yTop + ")", "(" + xLeft + ", 0)", "(0, " + yBottom + ")"];
-                var gotLbl = ggbApp.evalCommandGetLabels(rawCmds[aci]);
-                if (gotLbl && gotLbl.trim() !== "") {
-                  var autoLabel = gotLbl.split(",")[0].trim();
-                  try { ggbApp.renameObject(autoLabel, axExpectedLabels[aci]); } catch(reErr) {
-                    console.warn("[GGB] rename " + autoLabel + " -> " + axExpectedLabels[aci] + " failed");
-                    axExpectedLabels[aci] = autoLabel;
-                  }
-                }
-              }
-            }
-            console.log("[GGB] 点 " + axExpectedLabels[aci] + " exists=" + ggbApp.exists(axExpectedLabels[aci]));
-          } catch(acErr) {
-            console.warn("[GGB] 创建点失败: " + axCmds[aci], acErr);
-          }
-        }
-
-        var axDepCmds = [
-          "AxVX = Vector(AxO, AxE)",
-          "AxVY = Vector(AxO, AxY)",
-          "AxSX = Segment(AxXs, AxO)",
-          "AxSY = Segment(AxYs, AxO)"
-        ];
-
-        var axDepLabels = ["AxVX", "AxVY", "AxSX", "AxSY"];
-
-        for (var adi = 0; adi < axDepCmds.length; adi++) {
-          try {
-            var dok = ggbApp.evalCommand(axDepCmds[adi]);
-            console.log("[GGB] evalCommand: " + axDepCmds[adi] + " => " + dok);
-            if (!ggbApp.exists(axDepLabels[adi])) {
-              console.warn("[GGB] " + axDepLabels[adi] + " 不存在，尝试 evalCommandGetLabels + renameObject");
-              if (typeof ggbApp.evalCommandGetLabels === "function") {
-                var rawDepCmds = ["Vector(AxO, AxE)", "Vector(AxO, AxY)", "Segment(AxXs, AxO)", "Segment(AxYs, AxO)"];
-                var gotDepLbl = ggbApp.evalCommandGetLabels(rawDepCmds[adi]);
-                if (gotDepLbl && gotDepLbl.trim() !== "") {
-                  var autoDepLabel = gotDepLbl.split(",")[0].trim();
-                  try { ggbApp.renameObject(autoDepLabel, axDepLabels[adi]); } catch(reErr2) {
-                    console.warn("[GGB] rename " + autoDepLabel + " -> " + axDepLabels[adi] + " failed");
-                    axDepLabels[adi] = autoDepLabel;
-                  }
-                }
-              }
-            }
-            console.log("[GGB] " + axDepLabels[adi] + " exists=" + ggbApp.exists(axDepLabels[adi]));
-          } catch(adErr) {
-            console.warn("[GGB] 创建依赖对象失败: " + axDepCmds[adi], adErr);
-          }
-        }
-
-        var axPts = ["AxO", "AxE", "AxY", "AxXs", "AxYs"];
-        for (var pi = 0; pi < axPts.length; pi++) {
-          var pn = axPts[pi];
-          if (ggbApp.exists(pn)) {
-            try { ggbApp.setPointSize(pn, 1); } catch(psErr) {}
-            try { ggbApp.setFixed(pn, true, false); } catch(fxErr) {}
-            if (pn !== "AxO") {
-              try { ggbApp.setVisible(pn, false); } catch(vsErr) {}
-            }
-          } else {
-            console.warn("[GGB] 点 " + pn + " 不存在，跳过样式设置");
-          }
-        }
-
-        if (ggbApp.exists("AxO")) {
-          try {
-            ggbApp.setLabelVisible("AxO", true);
-            ggbApp.setLabelStyle("AxO", 3);
-            ggbApp.setCaption("AxO", "O");
-            ggbApp.setColor("AxO", 0, 0, 0);
-          } catch(loErr) { console.warn("[GGB] AxO label error:", loErr); }
-        }
-
-        if (ggbApp.exists("AxVX")) {
-          try {
-            ggbApp.setLabelVisible("AxVX", false);
-            ggbApp.setColor("AxVX", 0, 0, 0);
-            ggbApp.setLineThickness("AxVX", 5);
-            ggbApp.setFixed("AxVX", true, false);
-          } catch(lxErr) { console.warn("[GGB] AxVX style error:", lxErr); }
-        }
-
-        if (ggbApp.exists("AxVY")) {
-          try {
-            ggbApp.setLabelVisible("AxVY", false);
-            ggbApp.setColor("AxVY", 0, 0, 0);
-            ggbApp.setLineThickness("AxVY", 5);
-            ggbApp.setFixed("AxVY", true, false);
-          } catch(lyErr) { console.warn("[GGB] AxVY style error:", lyErr); }
-        }
-
-        try {
-          var textX = ggbApp.evalCommand("AxLabelX = Text(\"x\", (" + (xRight * 0.95) + ", " + (yMin * 0.15) + "))");
-          console.log("[GGB] 创建文本 AxLabelX: " + textX);
-          if (ggbApp.exists("AxLabelX")) {
-            try { ggbApp.setColor("AxLabelX", 0, 0, 0); ggbApp.setFixed("AxLabelX", true, false); } catch(txErr) {}
-          }
-        } catch(txErr1) { console.warn("[GGB] 创建 x 文本失败:", txErr1); }
-
-        try {
-          var textY = ggbApp.evalCommand("AxLabelY = Text(\"y\", (" + (xMin * 0.15) + ", " + (yTop * 0.95) + "))");
-          console.log("[GGB] 创建文本 AxLabelY: " + textY);
-          if (ggbApp.exists("AxLabelY")) {
-            try { ggbApp.setColor("AxLabelY", 0, 0, 0); ggbApp.setFixed("AxLabelY", true, false); } catch(tyErr) {}
-          }
-        } catch(tyErr1) { console.warn("[GGB] 创建 y 文本失败:", tyErr1); }
-
-        var axHide = ["AxE", "AxY", "AxXs", "AxYs", "AxSX", "AxSY"];
-        for (var hi = 0; hi < axHide.length; hi++) {
-          if (ggbApp.exists(axHide[hi])) {
-            try { ggbApp.setLabelVisible(axHide[hi], false); } catch(hErr) {}
-          }
-        }
-        if (ggbApp.exists("AxSX")) {
-          try { ggbApp.setColor("AxSX", 0, 0, 0); ggbApp.setLineThickness("AxSX", 5); ggbApp.setFixed("AxSX", true, false); } catch(sxErr) {}
-        }
-        if (ggbApp.exists("AxSY")) {
-          try { ggbApp.setColor("AxSY", 0, 0, 0); ggbApp.setLineThickness("AxSY", 5); ggbApp.setFixed("AxSY", true, false); } catch(syErr) {}
-        }
-
-        try { ggbApp.setRepaintingActive(true); } catch(rpErr2) {}
-
-        console.log("[GGB] 坐标轴对象存在检查: AxO=" + ggbApp.exists("AxO") + " AxE=" + ggbApp.exists("AxE") + " AxY=" + ggbApp.exists("AxY") + " AxVX=" + ggbApp.exists("AxVX") + " AxVY=" + ggbApp.exists("AxVY"));
-
+        try { ggbApp.setAxesVisible(1, true, true); } catch(e) { try { ggbApp.setAxesVisible(true, true); } catch(e2) {} }
+        try { ggbApp.setGridVisible(1, false); } catch(e) { try { ggbApp.setGridVisible(false); } catch(e2) {} }
+        try { ggbApp.setAxisLabels(1, "x", "y", ""); } catch(alErr) {}
+        try { ggbApp.setAxisSteps(1, 9999, 9999, 1); } catch(asErr) {}
         var allNames2 = ggbApp.getAllObjectNames();
         if (allNames2) {
           var names2 = typeof allNames2 === "string" ? allNames2.split(",") : (Array.isArray(allNames2) ? allNames2 : []);
           for (var j = 0; j < names2.length; j++) {
             var name2 = names2[j].trim();
             if (!name2) continue;
-            if (name2.indexOf("Ax") === 0) continue;
             var type2 = ggbApp.getObjectType(name2);
             if (type2 === "point") {
               ggbApp.setLabelVisible(name2, true);
@@ -1192,6 +1048,23 @@
             } else {
               ggbApp.setLabelVisible(name2, false);
             }
+          }
+        }
+      } else if (mode === "native") {
+        var axLabels3 = ["AxO", "AxE", "AxY", "AxXs", "AxYs", "AxVX", "AxVY", "AxSX", "AxSY", "AxLabelX", "AxLabelY"];
+        for (var di3 = 0; di3 < axLabels3.length; di3++) { try { ggbApp.deleteObject(axLabels3[di3]); } catch(de3) {} }
+        try { ggbApp.setAxesVisible(1, true, true); } catch(e) { try { ggbApp.setAxesVisible(true, true); } catch(e2) {} }
+        try { ggbApp.setGridVisible(1, true); } catch(e) { try { ggbApp.setGridVisible(true); } catch(e2) {} }
+        try { ggbApp.setAxisLabels(1, "", "", ""); } catch(alErr3) {}
+        try { ggbApp.setAxisSteps(1, 1, 1, 1); } catch(asErr3) {}
+        var allNames3 = ggbApp.getAllObjectNames();
+        if (allNames3) {
+          var names3 = typeof allNames3 === "string" ? allNames3.split(",") : (Array.isArray(allNames3) ? allNames3 : []);
+          for (var k = 0; k < names3.length; k++) {
+            var name3 = names3[k].trim();
+            if (!name3) continue;
+            try { ggbApp.setLabelVisible(name3, true); } catch(lvErr) {}
+            try { ggbApp.setVisible(name3, true); } catch(vsErr3) {}
           }
         }
       }
@@ -1209,7 +1082,39 @@
     $("btn-new-conv").addEventListener("click", newConversation);
     $("btn-config").addEventListener("click", function () { applyConfigToUI(); $("config-modal").classList.add("open"); });
     $("btn-close-config").addEventListener("click", function () { $("config-modal").classList.remove("open"); });
-    $("config-overlay").addEventListener("click", function () { $("config-modal").classList.remove("open"); });
+    // 只有点击 overlay 本身时才关闭 modal
+    $("config-overlay").addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      // 确保点击 target 是 overlay 才关闭
+      if (e.target === $("config-overlay")) {
+        $("config-modal").classList.remove("open");
+      }
+    });
+
+    // 点击 modal-content 不会关闭
+    var modalContent = $("config-modal").querySelector(".modal-content");
+    modalContent.addEventListener("click", function(e) {
+      e.stopPropagation();
+    });
+    modalContent.addEventListener("mousedown", function(e) {
+      e.stopPropagation();
+    });
+    modalContent.addEventListener("mouseup", function(e) {
+      e.stopPropagation();
+    });
+
+    // 阻止下拉选择框的点击事件冒泡，防止关闭
+    var providerSelect = $("provider-select");
+    var modelSelect = $("model-select");
+    [providerSelect, modelSelect].forEach(function(sel) {
+      if (sel) {
+        sel.addEventListener("click", function(e) { e.stopPropagation(); });
+        sel.addEventListener("mousedown", function(e) { e.stopPropagation(); });
+        sel.addEventListener("mouseup", function(e) { e.stopPropagation(); });
+        sel.addEventListener("change", function(e) { e.stopPropagation(); });
+      }
+    });
     $("btn-save-config").addEventListener("click", saveConfig);
     $("provider-select").addEventListener("change", function () { config.provider = this.value; updateModelOptions(); });
     $("stop-btn").addEventListener("click", function () {
@@ -1223,39 +1128,111 @@
     if (modeToggle) {
       modeToggle.addEventListener("click", function(e) {
         e.stopPropagation();
-        ggbMode = ggbMode === "geometry" ? "function" : "geometry";
+        ggbMode = ggbMode === "geometry" ? "function" : ggbMode === "function" ? "native" : "geometry";
         syncModeUI();
         applyGGBMode(ggbMode);
         try { localStorage.setItem("ai-ggb-mode", ggbMode); } catch(ex) {}
       });
     }
     // 模式选项卡切换
-    var tabChat = $("tab-chat");
-    var tabCommand = $("tab-command");
-    if (tabChat && tabCommand) {
-      tabChat.addEventListener("click", function() { switchModeTab("chat"); });
-      tabCommand.addEventListener("click", function() { switchModeTab("command"); });
+    var dropdownBtn = $("mode-dropdown-btn");
+    var dropdownMenu = $("mode-dropdown-menu");
+    if (dropdownBtn && dropdownMenu) {
+      dropdownBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        dropdownBtn.classList.toggle("open");
+        dropdownMenu.classList.toggle("open");
+      });
+      document.addEventListener("click", function() {
+        dropdownBtn.classList.remove("open");
+        dropdownMenu.classList.remove("open");
+      });
+      var items = dropdownMenu.querySelectorAll(".mode-dropdown-item");
+      items.forEach(function(item) {
+        item.addEventListener("click", function(e) {
+          e.stopPropagation();
+          var mode = item.getAttribute("data-mode");
+          switchModeTab(mode);
+          dropdownBtn.classList.remove("open");
+          dropdownMenu.classList.remove("open");
+        });
+      });
     }
     // 命令模式提交
     $("command-form").addEventListener("submit", handleCommandSubmit);
+    // 显示题目按钮
+    $("btn-show-problem").addEventListener("click", showProblemOnCanvas);
     initDrag();
     initResize();
   }
 
   // ======= 模式选项卡切换 =======
+  var chatMode = "chat";
+
   function switchModeTab(mode) {
-    var tabChat = $("tab-chat");
-    var tabCommand = $("tab-command");
     var viewChat = $("view-chat");
     var viewCommand = $("view-command");
 
-    tabChat.classList.toggle("active", mode === "chat");
-    tabCommand.classList.toggle("active", mode === "command");
-    viewChat.classList.toggle("active", mode === "chat");
+    chatMode = mode;
+
+    var dropdownBtn = $("mode-dropdown-btn");
+    var dropdownMenu = $("mode-dropdown-menu");
+    var dropdownLabel = $("mode-dropdown-label");
+    var dropdownIcon = dropdownBtn ? dropdownBtn.querySelector(".mode-dropdown-icon") : null;
+
+    if (dropdownMenu) {
+      var items = dropdownMenu.querySelectorAll(".mode-dropdown-item");
+      items.forEach(function(item) {
+        var itemMode = item.getAttribute("data-mode");
+        item.classList.toggle("active", itemMode === mode);
+      });
+    }
+
+    var modeConfig = {
+      chat: { label: "聊天", icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
+      command: { label: "命令", icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>' },
+      reverse: { label: "反推", icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>' }
+    };
+    var cfg = modeConfig[mode] || modeConfig.chat;
+    if (dropdownLabel) dropdownLabel.textContent = cfg.label;
+    if (dropdownIcon) dropdownIcon.innerHTML = cfg.icon;
+
+    viewChat.classList.toggle("active", mode === "chat" || mode === "reverse");
     viewCommand.classList.toggle("active", mode === "command");
 
     if (mode === "command") {
       $("command-input").focus();
+    }
+  }
+
+  // ======= 显示题目在画布上 =======
+  function showProblemOnCanvas() {
+    if (!ggbApp) return;
+    var lastUserMsg = null;
+    for (var fi = messages.length - 1; fi >= 0; fi--) {
+      if (messages[fi].role === "user") {
+        lastUserMsg = messages[fi];
+        break;
+      }
+    }
+    if (!lastUserMsg) {
+      alert("请先输入题目！");
+      return;
+    }
+    var txt = lastUserMsg.content;
+    try {
+      ggbApp.deleteObject("problemTitle");
+    } catch (e) {}
+    try {
+      var safeTxt = txt.replace(/"/g, '\\"').replace(/\n/g, ' ');
+      ggbApp.evalCommand('problemTitle = Text("' + safeTxt + '")');
+      if (ggbApp.exists("problemTitle")) {
+        ggbApp.setCoords("problemTitle", -8, 8);
+        ggbApp.setLabelVisible("problemTitle", false);
+        ggbApp.setFixed("problemTitle", true, false);
+      }
+    } catch (e) {
+      console.error("Failed to create text:", e);
     }
   }
 
@@ -1333,14 +1310,18 @@
   function syncModeUI() {
     var badge = $("mode-toggle");
     if (!badge) return;
+    badge.classList.remove("fn", "native");
     if (ggbMode === "geometry") {
       badge.textContent = "几何";
-      badge.classList.remove("fn");
       badge.title = "当前：几何模式（点击切换为函数模式）";
-    } else {
+    } else if (ggbMode === "function") {
       badge.textContent = "函数";
       badge.classList.add("fn");
-      badge.title = "当前：函数模式（点击切换为几何模式）";
+      badge.title = "当前：函数模式（点击切换为原生模式）";
+    } else {
+      badge.textContent = "原生";
+      badge.classList.add("native");
+      badge.title = "当前：原生模式（点击切换为几何模式）";
     }
   }
 
@@ -1382,12 +1363,21 @@
   function initResize() {
     var handle = $("resize-handle"), panel = $("chat-panel");
     var resizing = false, sx, sy, ow, oh;
+    var panelResizeTimer = null;
+    function resizeGGBAfterPanel() {
+      clearTimeout(panelResizeTimer);
+      panelResizeTimer = setTimeout(function() {
+        if (!ggbApp) return;
+        var cont = document.getElementById("geogebra-container");
+        if (cont) { try { ggbApp.setSize(cont.clientWidth, cont.clientHeight); } catch(re) {} }
+      }, 200);
+    }
     handle.addEventListener("mousedown", function (e) { resizing = true; sx = e.clientX; sy = e.clientY; ow = panel.offsetWidth; oh = panel.offsetHeight; e.preventDefault(); e.stopPropagation(); });
-    document.addEventListener("mousemove", function (e) { if (!resizing) return; panel.style.width = Math.max(280, ow + e.clientX - sx) + "px"; panel.style.height = Math.max(200, oh + e.clientY - sy) + "px"; });
-    document.addEventListener("mouseup", function () { resizing = false; });
+    document.addEventListener("mousemove", function (e) { if (!resizing) return; panel.style.width = Math.max(280, ow + e.clientX - sx) + "px"; panel.style.height = Math.max(200, oh + e.clientY - sy) + "px"; resizeGGBAfterPanel(); });
+    document.addEventListener("mouseup", function () { if (resizing) { resizing = false; resizeGGBAfterPanel(); } });
     handle.addEventListener("touchstart", function (e) { var t = e.touches[0]; resizing = true; sx = t.clientX; sy = t.clientY; ow = panel.offsetWidth; oh = panel.offsetHeight; }, { passive: true });
-    document.addEventListener("touchmove", function (e) { if (!resizing) return; var t = e.touches[0]; panel.style.width = Math.max(280, ow + t.clientX - sx) + "px"; panel.style.height = Math.max(200, oh + t.clientY - sy) + "px"; }, { passive: true });
-    document.addEventListener("touchend", function () { resizing = false; });
+    document.addEventListener("touchmove", function (e) { if (!resizing) return; var t = e.touches[0]; panel.style.width = Math.max(280, ow + t.clientX - sx) + "px"; panel.style.height = Math.max(200, oh + t.clientY - sy) + "px"; resizeGGBAfterPanel(); }, { passive: true });
+    document.addEventListener("touchend", function () { resizing = false; resizeGGBAfterPanel(); });
   }
 
   // ======= 配置 =======
@@ -1456,7 +1446,10 @@
     }, 120000);
 
     var systemPrompt = config.systemPrompt || SYSTEM_PROMPT;
-    systemPrompt += "\n\n## 当前模式\n当前画布模式为「" + (ggbMode === "geometry" ? "几何模式" : "函数模式") + "」。" + (ggbMode === "geometry" ? "几何模式下，请只标注点和直角符号，不标注其他内容，不显示坐标轴和网格。" : "函数模式下，显示坐标轴（含xOy标签，不含单位刻度和网格），只标注点和直角符号，不标注其他内容。");
+    systemPrompt += "\n\n## 当前模式\n当前画布模式为「" + (ggbMode === "geometry" ? "几何模式" : ggbMode === "function" ? "函数模式" : "原生模式") + "」。" + (ggbMode === "geometry" ? "几何模式下，请只标注点和直角符号，不标注其他内容，不显示坐标轴和网格。" : ggbMode === "function" ? "函数模式下，显示GGB自带坐标轴，隐藏网格，只标注点和直角符号，不标注其他内容。" : "原生模式下，所有元素均可见，包括坐标轴、网格、所有标签，不做任何隐藏。");
+    if (chatMode === "reverse") {
+      systemPrompt += "\n\n## 反推绘图模式（关键指令）\n你正在「反推绘图模式」下工作。此模式的核心流程为：\n\n### 第一步：解题\n仔细阅读用户给出的数学题目，完整地、严谨地求解。你必须：\n- 列出已知条件\n- 写出完整的解题过程\n- 求出所有关键数值（坐标、长度、角度、方程等）\n- 给出最终答案\n\n### 第二步：提取几何要素\n从解题结果中提取出所有可用于绘图的几何要素：\n- 所有关键点的坐标\n- 线段、直线、射线的端点或方程\n- 圆的圆心和半径\n- 角度的大小和顶点\n- 曲线的方程和关键参数\n- 其他需要标注的数学对象\n\n### 第三步：精确绘图\n根据提取的几何要素，使用 GeoGebra 命令精确绘图：\n- 优先使用坐标值创建点（如 A=(3,4)），而不是依赖几何构造\n- 用计算出的精确数值，不要使用近似值\n- 确保图形与题目条件和解答结果完全一致\n- 标注必要的标签和数值\n\n**重要**：在反推模式下，你必须先完成解题，再进行绘图。不要跳过解题步骤直接画图。解题过程要展示给用户看。";
+    }
     var baseUrl = config.baseUrl || PROVIDER_CONFIG[config.provider].baseUrl;
     if (config.useProxy && config.proxyUrl) baseUrl = config.proxyUrl + "/" + baseUrl.replace(/^https?:\/\//, "");
 

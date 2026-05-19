@@ -60,6 +60,38 @@ body{font-family:var(--font);overflow:hidden;background:#f8fafc;color:var(--text
 .icon-btn-mode:hover{background:rgba(0,0,0,0.04);color:var(--text)}
 .icon-btn-mode.active{background:var(--blue);color:#fff}
 
+/* 聊天模式切换下拉 */
+.mode-dropdown{position:relative;flex-shrink:0}
+.mode-dropdown-btn{
+  display:flex;align-items:center;gap:4px;
+  padding:3px 8px 3px 6px;border:none;
+  background:rgba(0,0,0,0.04);border-radius:6px;
+  cursor:pointer;color:var(--text-secondary);
+  font-size:11px;font-weight:500;
+  transition:all .15s;white-space:nowrap;
+}
+.mode-dropdown-btn:hover{background:rgba(0,0,0,0.08);color:var(--text)}
+.mode-dropdown-btn.open{background:rgba(0,0,0,0.08);color:var(--text)}
+.mode-dropdown-icon,.mode-dropdown-arrow{display:flex;align-items:center;opacity:.7}
+.mode-dropdown-arrow{transition:transform .2s}
+.mode-dropdown-btn.open .mode-dropdown-arrow{transform:rotate(180deg)}
+.mode-dropdown-menu{
+  display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:1000;
+  background:#fff;border:1px solid var(--border);
+  border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.12);
+  min-width:120px;padding:4px;overflow:hidden;
+}
+.mode-dropdown-menu.open{display:block}
+.mode-dropdown-item{
+  display:flex;align-items:center;gap:8px;
+  padding:7px 10px;border-radius:5px;
+  cursor:pointer;font-size:12px;color:var(--text-secondary);
+  transition:all .15s;
+}
+.mode-dropdown-item:hover{background:rgba(0,0,0,0.04);color:var(--text)}
+.mode-dropdown-item.active{background:var(--blue);color:#fff}
+.mode-dropdown-item.active svg{opacity:1}
+
 /* 关闭按钮小样式 */
 .close-btn-small{color:var(--red)}
 .close-btn-small:hover{background:rgba(239,68,68,0.1);color:var(--red-dark)}
@@ -206,6 +238,8 @@ body{font-family:var(--font);overflow:hidden;background:#f8fafc;color:var(--text
 .mode-badge:hover{background:rgba(59,130,246,0.2)}
 .mode-badge.fn{background:rgba(16,185,129,0.1);color:var(--green)}
 .mode-badge.fn:hover{background:rgba(16,185,129,0.2)}
+.mode-badge.native{background:rgba(168,85,247,0.1);color:#a855f7}
+.mode-badge.native:hover{background:rgba(168,85,247,0.2)}
 
 #chat-input{
   flex:1;padding:6px 12px;border:1px solid var(--border);
