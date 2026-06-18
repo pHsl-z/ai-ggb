@@ -351,6 +351,12 @@ body{font-family:var(--font);overflow:hidden;background:#f8fafc;color:var(--text
     width:100%!important;height:55vh!important;
     border-radius:var(--radius) var(--radius) 0 0;
     min-width:unset;min-height:unset;
+    padding-bottom:env(safe-area-inset-bottom,0);
+    padding-bottom:constant(safe-area-inset-bottom,0);
   }
   .resize-handle{display:none}
+  #chat-form,#command-form{
+    padding-bottom:calc(6px + env(safe-area-inset-bottom,0));
+    padding-bottom:calc(6px + constant(safe-area-inset-bottom,0));
+  }
 }

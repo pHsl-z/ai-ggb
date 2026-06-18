@@ -804,6 +804,15 @@
           try {
             var c = document.getElementById("geogebra-container");
             if (c) api.setSize(c.clientWidth, c.clientHeight);
+            // 居中坐标轴：根据画布尺寸设置对称的坐标范围，让原点位于画布中心
+            try {
+              var cw = c ? c.clientWidth : window.innerWidth;
+              var ch = c ? c.clientHeight : window.innerHeight;
+              // 每像素对应的坐标单位约为 1，设置对称范围让原点居中
+              var halfW = Math.round(cw / 2);
+              var halfH = Math.round(ch / 2);
+              api.setCoordSystem(-halfW, halfW, -halfH, halfH);
+            } catch(csErr) { console.warn("[GGB] setCoordSystem 失败:", csErr); }
             api.registerClientListener(function (event) {
               if (event.type === "select") ggbSelection.push(event.target);
               else if (event.type === "deselect") ggbSelection = ggbSelection.filter(function (l) { return l !== event.target; });
@@ -815,7 +824,13 @@
             if (!ggbApp) return;
             var cont = document.getElementById("geogebra-container");
             if (cont) {
-              try { ggbApp.setSize(cont.clientWidth, cont.clientHeight); } catch(re) {}
+              try {
+                ggbApp.setSize(cont.clientWidth, cont.clientHeight);
+                // 窗口变化后重新居中坐标轴
+                var rw = Math.round(cont.clientWidth / 2);
+                var rh = Math.round(cont.clientHeight / 2);
+                ggbApp.setCoordSystem(-rw, rw, -rh, rh);
+              } catch(re) {}
             }
           }
           window.addEventListener("resize", function() {
@@ -1021,9 +1036,10 @@
         }
       } else if (mode === "function") {
         var axLabels2 = ["AxO", "AxE", "AxY", "AxXs", "AxYs", "AxVX", "AxVY", "AxSX", "AxSY", "AxLabelX", "AxLabelY"];
-        for (var di2 = 0; di2 < axLabels2.length; di2++) {
+        for ( var di2 = 0; di2 < axLabels2.length; di2++) {
           try { ggbApp.deleteObject(axLabels2[di2]); } catch(de2) {}
         }
+        try { ggbApp.setPerspective("x"); } catch(psErr) {}
         try { ggbApp.setAxesVisible(1, true, true); } catch(e) { try { ggbApp.setAxesVisible(true, true); } catch(e2) {} }
         try { ggbApp.setGridVisible(1, false); } catch(e) { try { ggbApp.setGridVisible(false); } catch(e2) {} }
         try { ggbApp.setAxisLabels(1, "x", "y", ""); } catch(alErr) {}
@@ -1053,6 +1069,7 @@
       } else if (mode === "native") {
         var axLabels3 = ["AxO", "AxE", "AxY", "AxXs", "AxYs", "AxVX", "AxVY", "AxSX", "AxSY", "AxLabelX", "AxLabelY"];
         for (var di3 = 0; di3 < axLabels3.length; di3++) { try { ggbApp.deleteObject(axLabels3[di3]); } catch(de3) {} }
+        try { ggbApp.setPerspective("x"); } catch(psErr3) {}
         try { ggbApp.setAxesVisible(1, true, true); } catch(e) { try { ggbApp.setAxesVisible(true, true); } catch(e2) {} }
         try { ggbApp.setGridVisible(1, true); } catch(e) { try { ggbApp.setGridVisible(true); } catch(e2) {} }
         try { ggbApp.setAxisLabels(1, "", "", ""); } catch(alErr3) {}
