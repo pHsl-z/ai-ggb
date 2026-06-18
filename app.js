@@ -755,6 +755,21 @@
   // ======= GeoGebra 初始化 =======
   function updateGGBStatus(status) {
     console.log("[GGB] status:", status);
+    var tip = document.getElementById("ggb-loader-tip");
+    var loader = document.getElementById("ggb-loader");
+    if (status === "loading") {
+      if (tip) tip.textContent = "正在加载 GeoGebra 引擎…";
+      if (loader) loader.classList.remove("hidden");
+    } else if (status === "injecting") {
+      if (tip) tip.textContent = "正在注入画布组件…";
+    } else if (status === "ready") {
+      if (tip) tip.textContent = "加载完成";
+      if (loader) {
+        setTimeout(function(){ loader.classList.add("hidden"); }, 300);
+      }
+    } else if (status === "error") {
+      if (tip) { tip.textContent = "加载失败，请刷新重试"; tip.style.color = "var(--red)"; }
+    }
   }
 
   function initGeoGebra() {
@@ -770,6 +785,7 @@
         return;
       }
       console.log("[GGB] GGBApplet 已加载，开始创建 applet");
+      updateGGBStatus("injecting");
 
       var ggbAppParams = {
         appName: "classic",
@@ -1024,7 +1040,6 @@
         for ( var di2 = 0; di2 < axLabels2.length; di2++) {
           try { ggbApp.deleteObject(axLabels2[di2]); } catch(de2) {}
         }
-        try { ggbApp.setPerspective("x"); } catch(psErr) {}
         try { ggbApp.setAxesVisible(1, true, true); } catch(e) { try { ggbApp.setAxesVisible(true, true); } catch(e2) {} }
         try { ggbApp.setGridVisible(1, false); } catch(e) { try { ggbApp.setGridVisible(false); } catch(e2) {} }
         try { ggbApp.setAxisLabels(1, "x", "y", ""); } catch(alErr) {}
@@ -1054,7 +1069,6 @@
       } else if (mode === "native") {
         var axLabels3 = ["AxO", "AxE", "AxY", "AxXs", "AxYs", "AxVX", "AxVY", "AxSX", "AxSY", "AxLabelX", "AxLabelY"];
         for (var di3 = 0; di3 < axLabels3.length; di3++) { try { ggbApp.deleteObject(axLabels3[di3]); } catch(de3) {} }
-        try { ggbApp.setPerspective("x"); } catch(psErr3) {}
         try { ggbApp.setAxesVisible(1, true, true); } catch(e) { try { ggbApp.setAxesVisible(true, true); } catch(e2) {} }
         try { ggbApp.setGridVisible(1, true); } catch(e) { try { ggbApp.setGridVisible(true); } catch(e2) {} }
         try { ggbApp.setAxisLabels(1, "", "", ""); } catch(alErr3) {}
