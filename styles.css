@@ -346,17 +346,18 @@ body{font-family:var(--font);overflow:hidden;background:#f8fafc;color:var(--text
 
 /* ===== 响应式 ===== */
 @media(max-width:640px){
+  #app{flex-direction:column}
+  #geogebra-container{height:45vh;flex:none}
   .panel{
-    right:0!important;left:0!important;top:auto!important;bottom:0!important;
-    width:100%!important;height:55vh!important;
+    position:relative !important;
+    right:auto !important;left:auto !important;top:auto !important;bottom:auto !important;
+    width:100% !important;height:55vh !important;
     border-radius:var(--radius) var(--radius) 0 0;
     min-width:unset;min-height:unset;
-    padding-bottom:env(safe-area-inset-bottom,0);
-    padding-bottom:constant(safe-area-inset-bottom,0);
+    padding-bottom:env(safe-area-inset-bottom);
   }
   .resize-handle{display:none}
   #chat-form,#command-form{
-    padding-bottom:calc(6px + env(safe-area-inset-bottom,0));
-    padding-bottom:calc(6px + constant(safe-area-inset-bottom,0));
+    padding-bottom:calc(6px + env(safe-area-inset-bottom));
   }
 }

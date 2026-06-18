@@ -804,15 +804,6 @@
           try {
             var c = document.getElementById("geogebra-container");
             if (c) api.setSize(c.clientWidth, c.clientHeight);
-            // 居中坐标轴：根据画布尺寸设置对称的坐标范围，让原点位于画布中心
-            try {
-              var cw = c ? c.clientWidth : window.innerWidth;
-              var ch = c ? c.clientHeight : window.innerHeight;
-              // 每像素对应的坐标单位约为 1，设置对称范围让原点居中
-              var halfW = Math.round(cw / 2);
-              var halfH = Math.round(ch / 2);
-              api.setCoordSystem(-halfW, halfW, -halfH, halfH);
-            } catch(csErr) { console.warn("[GGB] setCoordSystem 失败:", csErr); }
             api.registerClientListener(function (event) {
               if (event.type === "select") ggbSelection.push(event.target);
               else if (event.type === "deselect") ggbSelection = ggbSelection.filter(function (l) { return l !== event.target; });
@@ -824,13 +815,7 @@
             if (!ggbApp) return;
             var cont = document.getElementById("geogebra-container");
             if (cont) {
-              try {
-                ggbApp.setSize(cont.clientWidth, cont.clientHeight);
-                // 窗口变化后重新居中坐标轴
-                var rw = Math.round(cont.clientWidth / 2);
-                var rh = Math.round(cont.clientHeight / 2);
-                ggbApp.setCoordSystem(-rw, rw, -rh, rh);
-              } catch(re) {}
+              try { ggbApp.setSize(cont.clientWidth, cont.clientHeight); } catch(re) {}
             }
           }
           window.addEventListener("resize", function() {
